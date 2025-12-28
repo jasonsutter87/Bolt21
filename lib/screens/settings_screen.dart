@@ -2,12 +2,51 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
+import '../services/auth_service.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
 import 'welcome_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _biometricEnabled = false;
+  bool _biometricAvailable = false;
+  String _biometricType = 'Biometrics';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBiometricSettings();
+  }
+
+  Future<void> _loadBiometricSettings() async {
+    final available = await AuthService.canUseBiometrics();
+    final enabled = await AuthService.isBiometricEnabled();
+    final type = await AuthService.getBiometricTypeName();
+    setState(() {
+      _biometricAvailable = available;
+      _biometricEnabled = enabled;
+      _biometricType = type;
+    });
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    if (value) {
+      // Authenticate first before enabling
+      final success = await AuthService.authenticate(
+        reason: 'Authenticate to enable $_biometricType',
+      );
+      if (!success) return;
+    }
+    await AuthService.setBiometricEnabled(value);
+    setState(() => _biometricEnabled = value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,6 +56,27 @@ class SettingsScreen extends StatelessWidget {
       ),
       body: ListView(
         children: [
+          const _SectionHeader(title: 'Security'),
+          if (_biometricAvailable)
+            SwitchListTile(
+              secondary: Icon(
+                _biometricType == 'Face ID' ? Icons.face : Icons.fingerprint,
+                color: Bolt21Theme.orange,
+              ),
+              title: Text('Unlock with $_biometricType'),
+              subtitle: const Text('Require authentication to open app'),
+              value: _biometricEnabled,
+              onChanged: _toggleBiometric,
+              activeColor: Bolt21Theme.orange,
+            )
+          else
+            const ListTile(
+              leading: Icon(Icons.fingerprint, color: Bolt21Theme.textSecondary),
+              title: Text('Biometric Auth'),
+              subtitle: Text('Not available on this device'),
+            ),
+          const Divider(),
+
           const _SectionHeader(title: 'Wallet'),
           _SettingsTile(
             icon: Icons.key,
