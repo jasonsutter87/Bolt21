@@ -67,7 +67,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: const Text('Require authentication to open app'),
               value: _biometricEnabled,
               onChanged: _toggleBiometric,
-              activeColor: Bolt21Theme.orange,
+              activeTrackColor: Bolt21Theme.orange.withValues(alpha: 0.5),
+              thumbColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return Bolt21Theme.orange;
+                }
+                return null;
+              }),
             )
           else
             const ListTile(

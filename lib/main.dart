@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/wallet_provider.dart';
+import 'services/auth_service.dart';
 import 'services/secure_storage_service.dart';
 import 'utils/theme.dart';
 import 'screens/home_screen.dart';
+import 'screens/lock_screen.dart';
 import 'screens/welcome_screen.dart';
 
 void main() {
@@ -28,7 +30,7 @@ class Bolt21App extends StatelessWidget {
   }
 }
 
-/// Routes to welcome or home based on wallet state
+/// Routes to welcome, lock, or home based on wallet and auth state
 class AppRouter extends StatefulWidget {
   const AppRouter({super.key});
 
@@ -36,18 +38,36 @@ class AppRouter extends StatefulWidget {
   State<AppRouter> createState() => _AppRouterState();
 }
 
-class _AppRouterState extends State<AppRouter> {
+class _AppRouterState extends State<AppRouter> with WidgetsBindingObserver {
   bool _isLoading = true;
   bool _hasWallet = false;
+  bool _isLocked = false;
+  bool _biometricEnabled = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkWalletStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Lock app when it goes to background (if biometric is enabled)
+    if (state == AppLifecycleState.paused && _biometricEnabled && _hasWallet) {
+      setState(() => _isLocked = true);
+    }
   }
 
   Future<void> _checkWalletStatus() async {
     final hasWallet = await SecureStorageService.hasWallet();
+    final biometricEnabled = await AuthService.isBiometricEnabled();
 
     if (hasWallet) {
       // Auto-load existing wallet
@@ -61,9 +81,15 @@ class _AppRouterState extends State<AppRouter> {
     if (mounted) {
       setState(() {
         _hasWallet = hasWallet;
+        _biometricEnabled = biometricEnabled;
+        _isLocked = biometricEnabled && hasWallet;
         _isLoading = false;
       });
     }
+  }
+
+  void _onUnlocked() {
+    setState(() => _isLocked = false);
   }
 
   @override
@@ -95,6 +121,17 @@ class _AppRouterState extends State<AppRouter> {
       );
     }
 
-    return _hasWallet ? const HomeScreen() : const WelcomeScreen();
+    // No wallet - show welcome
+    if (!_hasWallet) {
+      return const WelcomeScreen();
+    }
+
+    // Wallet exists but locked - show lock screen
+    if (_isLocked) {
+      return LockScreen(onUnlocked: _onUnlocked);
+    }
+
+    // Wallet exists and unlocked - show home
+    return const HomeScreen();
   }
 }

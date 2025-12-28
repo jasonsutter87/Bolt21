@@ -49,10 +49,7 @@ class AuthService {
     try {
       return await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: false, // Allow PIN/pattern as fallback
-        ),
+        biometricOnly: false, // Allow PIN/pattern as fallback
       );
     } on PlatformException {
       return false;
