@@ -1,0 +1,273 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import '../providers/wallet_provider.dart';
+import '../utils/theme.dart';
+
+class ReceiveScreen extends StatefulWidget {
+  const ReceiveScreen({super.key});
+
+  @override
+  State<ReceiveScreen> createState() => _ReceiveScreenState();
+}
+
+class _ReceiveScreenState extends State<ReceiveScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Receive'),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Bolt21Theme.orange,
+          labelColor: Bolt21Theme.orange,
+          unselectedLabelColor: Bolt21Theme.textSecondary,
+          tabs: const [
+            Tab(text: 'BOLT12 Offer'),
+            Tab(text: 'On-chain'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: const [
+          _Bolt12Tab(),
+          _OnChainTab(),
+        ],
+      ),
+    );
+  }
+}
+
+/// BOLT12 Offer tab - reusable Lightning address
+class _Bolt12Tab extends StatelessWidget {
+  const _Bolt12Tab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<WalletProvider>(
+      builder: (context, wallet, child) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.bolt,
+                size: 48,
+                color: Bolt21Theme.orange,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'BOLT12 Offer',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Share this once. Receive payments forever.',
+                style: TextStyle(color: Bolt21Theme.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+
+              if (wallet.bolt12Offer == null) ...[
+                ElevatedButton(
+                  onPressed: wallet.isLoading
+                      ? null
+                      : () => wallet.generateBolt12Offer(),
+                  child: wallet.isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Generate Offer'),
+                ),
+              ] else ...[
+                Expanded(
+                  child: _QrCard(
+                    data: wallet.bolt12Offer!,
+                    label: 'Scan to pay',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _ActionButtons(data: wallet.bolt12Offer!),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// On-chain Bitcoin address tab
+class _OnChainTab extends StatelessWidget {
+  const _OnChainTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<WalletProvider>(
+      builder: (context, wallet, child) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.link,
+                size: 48,
+                color: Bolt21Theme.orange,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Bitcoin Address',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Receive on-chain Bitcoin',
+                style: TextStyle(color: Bolt21Theme.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+
+              if (wallet.onChainAddress == null) ...[
+                ElevatedButton(
+                  onPressed: wallet.isLoading
+                      ? null
+                      : () => wallet.generateOnChainAddress(),
+                  child: wallet.isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Generate Address'),
+                ),
+              ] else ...[
+                Expanded(
+                  child: _QrCard(
+                    data: 'bitcoin:${wallet.onChainAddress!}',
+                    label: wallet.onChainAddress!,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _ActionButtons(data: wallet.onChainAddress!),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _QrCard extends StatelessWidget {
+  final String data;
+  final String label;
+
+  const _QrCard({required this.data, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: QrImageView(
+                data: data,
+                version: QrVersions.auto,
+                size: 200,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Bolt21Theme.darkBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _truncate(label, 32),
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: Bolt21Theme.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _truncate(String s, int max) {
+    if (s.length <= max) return s;
+    return '${s.substring(0, max ~/ 2)}...${s.substring(s.length - max ~/ 2)}';
+  }
+}
+
+class _ActionButtons extends StatelessWidget {
+  final String data;
+
+  const _ActionButtons({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: data));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Copied to clipboard'),
+                  backgroundColor: Bolt21Theme.success,
+                ),
+              );
+            },
+            icon: const Icon(Icons.copy),
+            label: const Text('Copy'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: () {
+              Share.share(data);
+            },
+            icon: const Icon(Icons.share),
+            label: const Text('Share'),
+          ),
+        ),
+      ],
+    );
+  }
+}
