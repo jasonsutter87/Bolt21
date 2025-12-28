@@ -20,45 +20,72 @@ A self-custodial Lightning wallet with native BOLT12 support. Users hold their o
 
 ## Roadmap
 
-### Phase 1: Project Setup & LDK Integration
+### Phase 1: Project Setup & LDK Integration ✅
 - [x] Initialize Flutter project (iOS, Android, Web)
-- [ ] Add ldk-node-flutter package
-- [ ] Configure native bindings for iOS/Android
-- [ ] Basic LDK node initialization
-- [ ] Secure key generation and storage
+- [x] Add ldk-node-flutter package
+- [x] Configure native bindings for iOS/Android
+- [x] Basic LDK node initialization
+- [x] Secure key generation and storage
 
-### Phase 2: Core Wallet Functionality
-- [ ] Generate and display on-chain Bitcoin address
-- [ ] Show wallet balance (on-chain + Lightning)
-- [ ] Transaction history
-- [ ] Send on-chain payments
-- [ ] Receive on-chain payments
+### Phase 2: Core Wallet Functionality ✅
+- [x] Generate and display on-chain Bitcoin address
+- [x] Show wallet balance (on-chain + Lightning)
+- [x] Transaction history
+- [x] Send on-chain payments
+- [x] Receive on-chain payments
 
-### Phase 3: BOLT12 Offers (Main Feature)
-- [ ] Generate BOLT12 offer (reusable address)
-- [ ] Display offer as QR code + copyable string
-- [ ] Receive payments via BOLT12 offer
+### Phase 3: BOLT12 Offers (Main Feature) ✅
+- [x] Generate BOLT12 offer (reusable address)
+- [x] Display offer as QR code + copyable string
+- [x] Receive payments via BOLT12 offer
 - [ ] Payment notifications
 - [ ] Offer management (multiple offers, labels)
 
-### Phase 4: LSP Integration
-- [ ] Connect to Lightning Service Provider
-- [ ] Automated channel opening
-- [ ] Inbound liquidity for new users
+### Phase 4: LSP Integration ✅
+- [x] LSPS2 configuration support
+- [x] Automated channel opening (via LSP)
+- [ ] LSP configuration UI
 - [ ] Zero-conf channels for instant receiving
 
-### Phase 5: UI/UX Polish & Security
-- [ ] Clean, minimal wallet interface
+### Phase 5: UI/UX Polish & Security 🚧
+- [x] Clean, minimal wallet interface
+- [x] Dark theme with Bitcoin orange
+- [x] Onboarding flow (create/restore wallet)
+- [x] Settings screen (backup, node info, channels)
 - [ ] Biometric authentication
-- [ ] Encrypted local storage
-- [ ] Backup/restore with seed phrase
 - [ ] Security audit
 
 ### Phase 6: App Store & Web Deployment
+- [x] Android debug build working
+- [ ] iOS build
 - [ ] iOS App Store submission
 - [ ] Google Play Store submission
 - [ ] Web app deployment
 - [ ] Landing page
+
+---
+
+## Current Status
+
+**30 commits** - Core wallet functionality complete!
+
+### What Works:
+- Create new wallet with 12-word seed phrase
+- Restore existing wallet
+- View balances (on-chain + Lightning)
+- Generate BOLT12 offers (reusable addresses)
+- Generate on-chain addresses
+- Send payments (BOLT12, BOLT11)
+- QR code scanning
+- Settings (backup seed, node info, channels)
+- LSP configuration (code-level)
+
+### What's Next:
+- iOS build testing
+- Real device testing
+- LSP UI configuration
+- Payment notifications
+- App store submission
 
 ---
 
@@ -75,3 +102,5 @@ A self-custodial Lightning wallet with native BOLT12 support. Users hold their o
 - [BOLT12 Spec](https://bolt12.org)
 - [LDK Documentation](https://lightningdevkit.org)
 - [ldk-node-flutter](https://github.com/LtbLightning/ldk-node-flutter)
+- [Voltage Flow LSP](https://voltage.cloud/flow)
+- [LSPS2 Spec](https://github.com/BitcoinAndLightningLayerSpecs/lsp/tree/main/LSPS2)
