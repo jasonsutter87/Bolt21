@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:share_plus/share_plus.dart' show ShareParams, SharePlus;
 import '../providers/wallet_provider.dart';
 import '../utils/theme.dart';
 
@@ -261,7 +261,7 @@ class _ActionButtons extends StatelessWidget {
         Expanded(
           child: ElevatedButton.icon(
             onPressed: () {
-              Share.share(data);
+              SharePlus.instance.share(ShareParams(text: data));
             },
             icon: const Icon(Icons.share),
             label: const Text('Share'),

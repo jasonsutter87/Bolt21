@@ -53,7 +53,8 @@ class LightningService {
   /// Get on-chain wallet address
   Future<String> getOnChainAddress() async {
     _ensureInitialized();
-    final address = await _node!.onChainPayment().newAddress();
+    final onChainPayment = await _node!.onChainPayment();
+    final address = await onChainPayment.newAddress();
     return address.s;
   }
 
@@ -66,8 +67,8 @@ class LightningService {
   /// Generate a BOLT12 offer (reusable payment address)
   Future<String> generateBolt12Offer({String? description}) async {
     _ensureInitialized();
-    final offer = await _node!.bolt12Payment().receive(
-      amountMsat: null, // Any amount
+    final bolt12Payment = await _node!.bolt12Payment();
+    final offer = await bolt12Payment.receiveVariableAmount(
       description: description ?? 'Bolt21 Wallet',
     );
     return offer.s;
@@ -76,21 +77,31 @@ class LightningService {
   /// Pay a BOLT12 offer
   Future<PaymentId> payBolt12Offer({
     required String offer,
-    int? amountMsat,
+    BigInt? amountMsat,
   }) async {
     _ensureInitialized();
-    final paymentId = await _node!.bolt12Payment().send(
-      offer: Offer(s: offer),
-      payerNote: 'Sent via Bolt21',
-    );
-    return paymentId;
+    final bolt12Payment = await _node!.bolt12Payment();
+
+    if (amountMsat != null) {
+      return await bolt12Payment.sendUsingAmount(
+        offer: Offer(s: offer),
+        payerNote: 'Sent via Bolt21',
+        amountMsat: amountMsat,
+      );
+    } else {
+      return await bolt12Payment.send(
+        offer: Offer(s: offer),
+        payerNote: 'Sent via Bolt21',
+      );
+    }
   }
 
   /// Pay a BOLT11 invoice (for compatibility)
   Future<PaymentId> payBolt11Invoice(String invoice) async {
     _ensureInitialized();
-    final paymentId = await _node!.bolt11Payment().send(
-      invoice: Bolt11Invoice(s: invoice),
+    final bolt11Payment = await _node!.bolt11Payment();
+    final paymentId = await bolt11Payment.send(
+      invoice: Bolt11Invoice(signedRawInvoice: invoice),
     );
     return paymentId;
   }
@@ -104,8 +115,8 @@ class LightningService {
   /// Get node ID
   Future<String> getNodeId() async {
     _ensureInitialized();
-    final nodeId = _node!.nodeId();
-    return nodeId.s;
+    final nodeId = await _node!.nodeId();
+    return nodeId.hex;
   }
 
   /// Stop the node

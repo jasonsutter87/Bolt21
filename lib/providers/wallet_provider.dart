@@ -114,7 +114,7 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Pay a BOLT12 offer
-  Future<bool> payBolt12Offer(String offer, {int? amountMsat}) async {
+  Future<bool> payBolt12Offer(String offer, {BigInt? amountMsat}) async {
     if (!_isInitialized) return false;
     _setLoading(true);
 
