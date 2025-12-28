@@ -3,6 +3,29 @@ import 'package:flutter/foundation.dart';
 import 'package:ldk_node/ldk_node.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// LSP configuration for automatic channel liquidity
+class LspConfig {
+  final String nodeId;
+  final String address;
+  final int port;
+  final String? token;
+
+  const LspConfig({
+    required this.nodeId,
+    required this.address,
+    required this.port,
+    this.token,
+  });
+
+  /// Voltage Flow LSP (mainnet) - requires token from voltage.cloud
+  static LspConfig? voltage(String token) => LspConfig(
+        nodeId: '025804d4431ad05b06a1a1ee41f22f3c095c2a4e48e9cfe90ee9c2823c0301c396',
+        address: 'lsp.voltage.cloud',
+        port: 9735,
+        token: token,
+      );
+}
+
 /// Service for managing LDK Lightning node operations
 class LightningService {
   Node? _node;
@@ -12,7 +35,10 @@ class LightningService {
   Node? get node => _node;
 
   /// Initialize the Lightning node
-  Future<void> initialize({String? mnemonic}) async {
+  Future<void> initialize({
+    String? mnemonic,
+    LspConfig? lspConfig,
+  }) async {
     if (_isInitialized) return;
 
     try {
@@ -30,7 +56,21 @@ class LightningService {
 
       // Set mnemonic if provided, otherwise generate new one
       if (mnemonic != null) {
-        builder.setEntropyBip39Mnemonic(mnemonic: Mnemonic(seedPhrase: mnemonic));
+        builder.setEntropyBip39Mnemonic(
+            mnemonic: Mnemonic(seedPhrase: mnemonic));
+      }
+
+      // Configure LSP for automatic inbound liquidity
+      if (lspConfig != null) {
+        builder.setLiquiditySourceLsps2(
+          address: SocketAddress.hostname(
+            addr: lspConfig.address,
+            port: lspConfig.port,
+          ),
+          publicKey: PublicKey(hex: lspConfig.nodeId),
+          token: lspConfig.token,
+        );
+        debugPrint('LSP configured: ${lspConfig.address}:${lspConfig.port}');
       }
 
       _node = await builder.build();
@@ -62,6 +102,12 @@ class LightningService {
   Future<BalanceDetails> getBalances() async {
     _ensureInitialized();
     return await _node!.listBalances();
+  }
+
+  /// Sync wallets with the blockchain
+  Future<void> syncWallets() async {
+    _ensureInitialized();
+    await _node!.syncWallets();
   }
 
   /// Generate a BOLT12 offer (reusable payment address)
@@ -110,6 +156,12 @@ class LightningService {
   Future<List<PaymentDetails>> listPayments() async {
     _ensureInitialized();
     return await _node!.listPayments();
+  }
+
+  /// List all channels
+  Future<List<ChannelDetails>> listChannels() async {
+    _ensureInitialized();
+    return await _node!.listChannels();
   }
 
   /// Get node ID
