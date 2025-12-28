@@ -15,18 +15,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   @override
-  void initState() {
-    super.initState();
-    _initWallet();
-  }
-
-  Future<void> _initWallet() async {
-    final wallet = context.read<WalletProvider>();
-    // TODO: Check for existing wallet, show onboarding if new
-    await wallet.initializeWallet();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -76,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton(
-                      onPressed: _initWallet,
+                      onPressed: () => wallet.refreshAll(),
                       child: const Text('Retry'),
                     ),
                   ],
