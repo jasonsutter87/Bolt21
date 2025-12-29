@@ -1,0 +1,198 @@
+.about-hero {
+  color: white;
+  padding: 6rem 0 4rem;
+  text-align: center;
+}
+.about-hero h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.about-hero .lead {
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.mission {
+  padding: 4rem 0;
+  color: white;
+}
+.mission .mission-content {
+  max-width: 800px;
+  margin: 0 auto;
+  text-align: center;
+}
+.mission .mission-content h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  color: white;
+}
+.mission .mission-content p {
+  font-size: 1.125rem;
+  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 1.5rem;
+}
+.mission .mission-content p:last-child {
+  margin-bottom: 0;
+}
+
+.values {
+  padding: 4rem 0;
+  color: white;
+}
+.values .section-title {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 3rem;
+  color: white;
+}
+.values .values-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+@media (max-width: 768px) {
+  .values .values-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.values .value-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2rem;
+  border-radius: 1rem;
+  text-align: center;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.values .value-card:hover {
+  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.08);
+}
+.values .value-card h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: white;
+}
+.values .value-card p {
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.6;
+  margin: 0;
+}
+.values .value-icon {
+  width: 4rem;
+  height: 4rem;
+  background: linear-gradient(135deg, #F7931A, #e8850f);
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+}
+.values .value-icon svg {
+  width: 2rem;
+  height: 2rem;
+  color: white;
+}
+
+.open-source {
+  padding: 4rem 0;
+  color: white;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.open-source .open-source-content {
+  max-width: 600px;
+  margin: 0 auto;
+  text-align: center;
+}
+.open-source .open-source-content h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.open-source .open-source-content p {
+  font-size: 1.125rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 2rem;
+}
+
+.contact {
+  padding: 4rem 0;
+  color: white;
+}
+.contact .section-title {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 3rem;
+  color: white;
+}
+.contact .contact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+@media (max-width: 768px) {
+  .contact .contact-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.contact .contact-item {
+  text-align: center;
+}
+.contact .contact-item h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: white;
+}
+.contact .contact-item p {
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 0.5rem;
+}
+.contact .contact-item a {
+  color: #F7931A;
+  text-decoration: none;
+  font-weight: 500;
+}
+.contact .contact-item a:hover {
+  text-decoration: underline;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+.btn-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}

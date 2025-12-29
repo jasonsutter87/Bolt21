@@ -54,30 +54,12 @@ class _LockScreenState extends State<LockScreen> {
               const Spacer(),
 
               // Logo
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Bolt21Theme.orange.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.bolt,
-                  size: 56,
-                  color: Bolt21Theme.orange,
-                ),
+              Image.asset(
+                'assets/images/logo.png',
+                width: 150,
+                height: 150,
               ),
-              const SizedBox(height: 32),
-
-              // Title
-              Text(
-                'Bolt21',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Bolt21Theme.orange,
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               const Text(
                 'Wallet is locked',
                 style: TextStyle(color: Bolt21Theme.textSecondary),

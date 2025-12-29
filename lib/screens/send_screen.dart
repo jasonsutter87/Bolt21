@@ -46,9 +46,10 @@ class _SendScreenState extends State<SendScreen> {
     if (input.isEmpty) return;
 
     // Breez SDK automatically parses and handles BOLT11, BOLT12, Lightning Addresses, etc.
-    final success = await wallet.sendPayment(input);
+    // Returns operation ID on success, null on failure
+    final operationId = await wallet.sendPayment(input);
 
-    if (success && mounted) {
+    if (operationId != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Payment sent!'),

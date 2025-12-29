@@ -1,0 +1,103 @@
+// Terms/Legal Pages Styles - Dark Theme
+$primary: #F7931A;
+$text-light: rgba(255, 255, 255, 0.7);
+$card-bg: rgba(255, 255, 255, 0.05);
+$card-border: rgba(255, 255, 255, 0.1);
+
+#inner-page-hero-section {
+  padding: 4rem 0 2rem;
+  color: white;
+  text-align: center;
+
+  h4 {
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: $primary;
+    margin-bottom: 0.5rem;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 0;
+  }
+}
+
+#policies-main-section {
+  padding: 3rem 0 6rem;
+  color: white;
+
+  .SubHead {
+    font-weight: 700;
+    color: white;
+    font-size: 1.125rem;
+  }
+
+  p {
+    color: $text-light;
+    line-height: 1.8;
+    margin-bottom: 1.25rem;
+  }
+
+  ul, ol {
+    color: $text-light;
+    margin-bottom: 1.25rem;
+    padding-left: 1.5rem;
+
+    li {
+      margin-bottom: 0.5rem;
+      line-height: 1.6;
+    }
+  }
+
+  strong {
+    color: white;
+  }
+
+  a {
+    color: $primary;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  em {
+    color: $text-light;
+  }
+}
+
+// Container classes used in the template
+.site-container-1340 {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -0.75rem;
+
+  > * {
+    padding: 0 0.75rem;
+  }
+}
+
+.col-12 {
+  width: 100%;
+}
+
+.col-lg-9 {
+  width: 100%;
+
+  @media (min-width: 992px) {
+    width: 75%;
+  }
+}
+
+.justify-content-center {
+  justify-content: center;
+}

@@ -1,0 +1,86 @@
+#inner-page-hero-section {
+  padding: 4rem 0 2rem;
+  color: white;
+  text-align: center;
+}
+#inner-page-hero-section h4 {
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #F7931A;
+  margin-bottom: 0.5rem;
+}
+#inner-page-hero-section h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+#policies-main-section {
+  padding: 3rem 0 6rem;
+  color: white;
+}
+#policies-main-section .SubHead {
+  font-weight: 700;
+  color: white;
+  font-size: 1.125rem;
+}
+#policies-main-section p {
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.8;
+  margin-bottom: 1.25rem;
+}
+#policies-main-section ul, #policies-main-section ol {
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 1.25rem;
+  padding-left: 1.5rem;
+}
+#policies-main-section ul li, #policies-main-section ol li {
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+#policies-main-section strong {
+  color: white;
+}
+#policies-main-section a {
+  color: #F7931A;
+  text-decoration: none;
+}
+#policies-main-section a:hover {
+  text-decoration: underline;
+}
+#policies-main-section em {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.site-container-1340 {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -0.75rem;
+}
+.row > * {
+  padding: 0 0.75rem;
+}
+
+.col-12 {
+  width: 100%;
+}
+
+.col-lg-9 {
+  width: 100%;
+}
+@media (min-width: 992px) {
+  .col-lg-9 {
+    width: 75%;
+  }
+}
+
+.justify-content-center {
+  justify-content: center;
+}

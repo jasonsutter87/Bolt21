@@ -1,0 +1,47 @@
+{{/* Bolt21 Footer */}}
+<div class="container footer-container">
+  <div class="footer-grid">
+    {{/* Logo and tagline */}}
+    <div class="footer-brand">
+      <a href="/" class="footer-logo">
+        <img src="/images/logo.png" alt="Bolt21" />
+        <span>Bolt21</span>
+      </a>
+      <p class="footer-tagline">{{ .Site.Params.tagline | default "Your keys. Your sats. Instant payments." }}</p>
+    </div>
+
+    {{/* Product Links */}}
+    <div class="footer-links">
+      <h5>Product</h5>
+      <ul>
+        <li><a href="/features">Features</a></li>
+        <li><a href="/#download">Download</a></li>
+        <li><a href="/docs/">Docs</a></li>
+      </ul>
+    </div>
+
+    {{/* Company Links */}}
+    <div class="footer-links">
+      <h5>Company</h5>
+      <ul>
+        <li><a href="/about">About</a></li>
+        <li><a href="https://github.com/bolt21" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://twitter.com/bolt21app" target="_blank" rel="noopener">Twitter</a></li>
+      </ul>
+    </div>
+
+    {{/* Legal Links */}}
+    <div class="footer-links">
+      <h5>Legal</h5>
+      <ul>
+        <li><a href="/privacy-policy">Privacy Policy</a></li>
+        <li><a href="/terms-of-use">Terms of Use</a></li>
+      </ul>
+    </div>
+  </div>
+
+  {{/* Copyright */}}
+  <div class="footer-copyright">
+    <p>&copy; {{ now.Year }} Bolt21. Open source software.</p>
+  </div>
+</div>

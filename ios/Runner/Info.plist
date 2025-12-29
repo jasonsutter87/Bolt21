@@ -45,5 +45,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Bolt21 uses Face ID to securely unlock your wallet and authorize transactions.</string>
 </dict>
 </plist>

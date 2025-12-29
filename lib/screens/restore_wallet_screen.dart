@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:bip39/bip39.dart' as bip39;
 import '../providers/wallet_provider.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
@@ -18,6 +19,9 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
   final List<FocusNode> _focusNodes = List.generate(12, (_) => FocusNode());
   bool _isLoading = false;
   String? _error;
+  String _syncStatus = '';
+  int _syncStep = 0;
+  static const int _totalSyncSteps = 4;
 
   @override
   void dispose() {
@@ -38,33 +42,80 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
     return _controllers.every((c) => c.text.trim().isNotEmpty);
   }
 
+  void _updateSyncStatus(String status, int step) {
+    if (mounted) {
+      setState(() {
+        _syncStatus = status;
+        _syncStep = step;
+      });
+    }
+  }
+
   Future<void> _restoreWallet() async {
     if (!_isComplete) return;
 
     setState(() {
       _isLoading = true;
       _error = null;
+      _syncStatus = 'Validating recovery phrase...';
+      _syncStep = 1;
     });
 
     try {
       final mnemonic = _mnemonic;
 
-      // Save mnemonic securely
+      // Validate mnemonic format (word count)
+      final words = mnemonic.split(' ');
+      if (words.length != 12) {
+        throw Exception('Recovery phrase must be exactly 12 words');
+      }
+
+      // Validate BIP39 mnemonic checksum and word list
+      if (!bip39.validateMnemonic(mnemonic)) {
+        throw Exception(
+          'Invalid recovery phrase. Please check that all words are spelled correctly '
+          'and are valid BIP39 words.'
+        );
+      }
+
+      _updateSyncStatus('Saving recovery phrase...', 2);
       await SecureStorageService.saveMnemonic(mnemonic);
 
-      // Initialize wallet
+      _updateSyncStatus('Connecting to Lightning network...', 3);
       final wallet = context.read<WalletProvider>();
       await wallet.initializeWallet(mnemonic: mnemonic);
 
       if (wallet.error != null) {
+        // Clear saved mnemonic if initialization failed
+        await SecureStorageService.clearWallet();
         setState(() {
           _error = wallet.error;
           _isLoading = false;
+          _syncStatus = '';
+          _syncStep = 0;
         });
         return;
       }
 
+      _updateSyncStatus('Syncing wallet data...', 4);
+      // Give a moment for the UI to update
+      await Future.delayed(const Duration(milliseconds: 500));
+
       if (mounted) {
+        // Show success message with balance
+        final balance = wallet.totalBalanceSats;
+        final paymentCount = wallet.payments.length;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Wallet restored! Balance: $balance sats, $paymentCount transactions found.',
+            ),
+            backgroundColor: Bolt21Theme.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const HomeScreen()),
@@ -75,6 +126,8 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
       setState(() {
         _error = e.toString();
         _isLoading = false;
+        _syncStatus = '';
+        _syncStep = 0;
       });
     }
   }
@@ -221,26 +274,64 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
             ),
           if (_error != null) const SizedBox(height: 24),
 
-          // Restore button
-          SizedBox(
-            height: 56,
-            child: ElevatedButton(
-              onPressed: _isComplete && !_isLoading ? _restoreWallet : null,
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.black,
-                      ),
-                    )
-                  : const Text(
-                      'Restore Wallet',
-                      style: TextStyle(fontSize: 18),
+          // Restore button or sync progress
+          if (_isLoading) ...[
+            // Sync progress indicator
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Bolt21Theme.darkCard,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  const CircularProgressIndicator(color: Bolt21Theme.orange),
+                  const SizedBox(height: 16),
+                  Text(
+                    _syncStatus,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Bolt21Theme.textPrimary,
                     ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  // Progress bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: _syncStep / _totalSyncSteps,
+                      backgroundColor: Bolt21Theme.darkBg,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Bolt21Theme.orange,
+                      ),
+                      minHeight: 8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Step $_syncStep of $_totalSyncSteps',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Bolt21Theme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ] else ...[
+            SizedBox(
+              height: 56,
+              child: ElevatedButton(
+                onPressed: _isComplete ? _restoreWallet : null,
+                child: const Text(
+                  'Restore Wallet',
+                  style: TextStyle(fontSize: 18),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 50),
         ],
       ),
     );

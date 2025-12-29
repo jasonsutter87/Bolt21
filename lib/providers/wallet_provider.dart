@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import '../services/lightning_service.dart';
+import '../services/operation_state_service.dart';
+import '../utils/retry_helper.dart';
 
 /// Wallet state management
 class WalletProvider extends ChangeNotifier {
   final LightningService _lightningService = LightningService();
+  final OperationStateService _operationStateService = OperationStateService();
 
   // State
   bool _isLoading = false;
@@ -14,6 +17,7 @@ class WalletProvider extends ChangeNotifier {
   String? _bolt12Offer;
   GetInfoResponse? _info;
   List<Payment> _payments = [];
+  List<OperationState> _incompleteOperations = [];
 
   // Getters
   bool get isLoading => _isLoading;
@@ -24,6 +28,9 @@ class WalletProvider extends ChangeNotifier {
   GetInfoResponse? get info => _info;
   List<Payment> get payments => _payments;
   LightningService get lightningService => _lightningService;
+  List<OperationState> get incompleteOperations => _incompleteOperations;
+  bool get hasIncompleteOperations => _incompleteOperations.isNotEmpty;
+  OperationStateService get operationStateService => _operationStateService;
 
   // Derived getters
   int get totalBalanceSats {
@@ -48,15 +55,58 @@ class WalletProvider extends ChangeNotifier {
     _error = null;
 
     try {
+      // Initialize operation state tracking first
+      await _operationStateService.initialize();
+
       await _lightningService.initialize(mnemonic: mnemonic);
       _isInitialized = true;
       await _refreshAll();
+
+      // Check for any incomplete operations from previous session
+      await _checkIncompleteOperations();
     } catch (e) {
       _error = e.toString();
       debugPrint('Wallet initialization error: $e');
     } finally {
       _setLoading(false);
     }
+  }
+
+  /// Check for incomplete operations from previous session
+  Future<void> _checkIncompleteOperations() async {
+    _incompleteOperations = _operationStateService.getIncompleteOperations();
+
+    if (_incompleteOperations.isNotEmpty) {
+      debugPrint('Found ${_incompleteOperations.length} incomplete operations');
+
+      // For operations that were in "executing" state, mark as unknown
+      // since we don't know if they completed
+      for (final op in _incompleteOperations) {
+        if (op.status == OperationStatus.executing) {
+          await _operationStateService.markUnknown(op.id);
+        }
+      }
+
+      // Refresh the list after updates
+      _incompleteOperations = _operationStateService.getIncompleteOperations();
+      notifyListeners();
+    }
+  }
+
+  /// Acknowledge and dismiss an incomplete operation after user review
+  Future<void> acknowledgeIncompleteOperation(String operationId) async {
+    await _operationStateService.removeOperation(operationId);
+    _incompleteOperations = _operationStateService.getIncompleteOperations();
+    notifyListeners();
+  }
+
+  /// Clear all incomplete operations (user confirmed they're resolved)
+  Future<void> clearIncompleteOperations() async {
+    for (final op in _incompleteOperations) {
+      await _operationStateService.removeOperation(op.id);
+    }
+    _incompleteOperations = [];
+    notifyListeners();
   }
 
   /// Generate a new mnemonic
@@ -74,60 +124,134 @@ class WalletProvider extends ChangeNotifier {
 
   Future<void> _refreshAll() async {
     try {
-      _info = await _lightningService.getInfo();
-      _payments = await _lightningService.listPayments();
+      // Use retry for network resilience
+      _info = await withRefreshRetry(
+        operation: () => _lightningService.getInfo(),
+        operationName: 'getInfo',
+      );
+      _payments = await withRefreshRetry(
+        operation: () => _lightningService.listPayments(),
+        operationName: 'listPayments',
+      );
       _error = null;
     } catch (e) {
-      _error = e.toString();
+      // Don't overwrite critical errors with refresh failures
+      if (_error == null) {
+        _error = 'Failed to refresh: ${e.toString()}';
+      }
+      debugPrint('Refresh failed: $e');
     }
     notifyListeners();
   }
 
   /// Get new on-chain address
-  Future<void> generateOnChainAddress() async {
-    if (!_isInitialized) return;
+  Future<String?> generateOnChainAddress() async {
+    if (!_isInitialized) return null;
+
+    final operation = await _operationStateService.createOperation(
+      type: OperationType.receiveOnchain,
+    );
 
     try {
+      await _operationStateService.markExecuting(operation.id);
       _onChainAddress = await _lightningService.getOnChainAddress();
+      await _operationStateService.markCompleted(operation.id);
       notifyListeners();
+      return _onChainAddress;
     } catch (e) {
+      await _operationStateService.markFailed(operation.id, e.toString());
       _error = e.toString();
       notifyListeners();
+      return null;
     }
   }
 
   /// Generate BOLT12 offer
-  Future<void> generateBolt12Offer() async {
-    if (!_isInitialized) return;
+  Future<String?> generateBolt12Offer() async {
+    if (!_isInitialized) return null;
+
+    final operation = await _operationStateService.createOperation(
+      type: OperationType.receiveBolt12,
+    );
 
     try {
+      await _operationStateService.markExecuting(operation.id);
       _bolt12Offer = await _lightningService.generateBolt12Offer();
+      await _operationStateService.markCompleted(operation.id);
       notifyListeners();
+      return _bolt12Offer;
     } catch (e) {
+      await _operationStateService.markFailed(operation.id, e.toString());
       _error = e.toString();
       notifyListeners();
+      return null;
     }
   }
 
   /// Send a payment (BOLT11, BOLT12, Lightning Address, etc.)
-  Future<bool> sendPayment(String destination, {BigInt? amountSat}) async {
-    if (!_isInitialized) return false;
+  /// Returns operation ID on success for tracking, null on failure
+  Future<String?> sendPayment(String destination, {BigInt? amountSat}) async {
+    if (!_isInitialized) return null;
     _setLoading(true);
 
+    // Create operation record BEFORE starting - this is critical for crash recovery
+    final operation = await _operationStateService.createOperation(
+      type: OperationType.send,
+      destination: destination,
+      amountSat: amountSat?.toInt(),
+    );
+
     try {
-      await _lightningService.sendPayment(
+      // Mark as preparing (SDK prepare call)
+      await _operationStateService.markPreparing(operation.id);
+
+      // Mark as executing (SDK send call)
+      await _operationStateService.markExecuting(operation.id);
+
+      final response = await _lightningService.sendPayment(
         destination: destination,
         amountSat: amountSat,
       );
+
+      // Mark as completed with transaction ID
+      await _operationStateService.markCompleted(
+        operation.id,
+        txId: response.payment.txId,
+      );
+
       await _refreshAll();
-      return true;
+      return operation.id;
     } catch (e) {
+      // Mark as failed with error
+      await _operationStateService.markFailed(operation.id, e.toString());
       _error = e.toString();
       notifyListeners();
-      return false;
+      return null;
     } finally {
       _setLoading(false);
     }
+  }
+
+  /// Send payment with idempotency - checks if operation already exists
+  Future<String?> sendPaymentIdempotent(
+    String destination, {
+    BigInt? amountSat,
+    String? idempotencyKey,
+  }) async {
+    // Check if there's already a pending/executing operation for this destination
+    final existing = _operationStateService.getAllOperations().where((op) =>
+        op.destination == destination &&
+        op.amountSat == amountSat?.toInt() &&
+        op.isIncomplete);
+
+    if (existing.isNotEmpty) {
+      debugPrint('Duplicate payment blocked - operation ${existing.first.id} already in progress');
+      _error = 'A payment to this destination is already in progress';
+      notifyListeners();
+      return null;
+    }
+
+    return sendPayment(destination, amountSat: amountSat);
   }
 
   void _setLoading(bool loading) {

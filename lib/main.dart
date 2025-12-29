@@ -105,18 +105,10 @@ class _AppRouterState extends State<AppRouter> with WidgetsBindingObserver {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Bolt21Theme.orange.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.bolt,
-                  size: 40,
-                  color: Bolt21Theme.orange,
-                ),
+              Image.asset(
+                'assets/images/logo.png',
+                width: 120,
+                height: 120,
               ),
               const SizedBox(height: 24),
               const CircularProgressIndicator(color: Bolt21Theme.orange),

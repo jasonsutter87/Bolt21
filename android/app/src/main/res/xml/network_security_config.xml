@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Configuration for Bolt21
+
+  SECURITY:
+  - Enforces HTTPS for all network connections
+  - Disables cleartext (HTTP) traffic
+  - Uses system trust anchors for certificate validation
+
+  For certificate pinning (recommended for production):
+  Add pin-set elements for Breez API endpoints
+-->
+<network-security-config>
+    <!-- Default configuration for all domains -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Trust system CAs -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!--
+      Debug configuration - allows localhost for development
+      This is automatically ignored in release builds
+    -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+
+    <!--
+      OPTIONAL: Certificate pinning for Breez API
+      Uncomment and add actual pin hashes before production release
+
+      <domain-config>
+          <domain includeSubdomains="true">api.breez.technology</domain>
+          <pin-set expiration="2025-12-31">
+              <pin digest="SHA-256">BASE64_ENCODED_SHA256_HASH_HERE</pin>
+              <pin digest="SHA-256">BACKUP_PIN_HASH_HERE</pin>
+          </pin-set>
+      </domain-config>
+    -->
+</network-security-config>

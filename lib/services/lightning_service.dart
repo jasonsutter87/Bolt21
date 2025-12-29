@@ -3,14 +3,12 @@ import 'package:bip39/bip39.dart' as bip39;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:path_provider/path_provider.dart';
+import 'config_service.dart';
 
 /// Service for managing Lightning node operations via Breez SDK Liquid
 class LightningService {
   BreezSdkLiquid? _sdk;
   bool _isInitialized = false;
-
-  // Breez API key for SDK access
-  static const String _breezApiKey = 'MIIBczCCASWgAwIBAgIHPsaA9tr6ETAFBgMrZXAwEDEOMAwGA1UEAxMFQnJlZXowHhcNMjUxMjI5MDEwOTM1WhcNMzUxMjI3MDEwOTM1WjAoMQ8wDQYDVQQKEwZCb2x0MjExFTATBgNVBAMTDGphc29uIHN1dHRlcjAqMAUGAytlcAMhANCD9cvfIDwcoiDKKYdT9BunHLS2/OuKzV8NS0SzqV13o4GFMIGCMA4GA1UdDwEB/wQEAwIFoDAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTaOaPuXmtLDTJVv++VYBiQr9gHCTAfBgNVHSMEGDAWgBTeqtaSVvON53SSFvxMtiCyayiYazAiBgNVHREEGzAZgRdqYXNvbnN1dHRlcjg3QGdtYWlsLmNvbTAFBgMrZXADQQBw92fM69Zv2nU2mNPhRlryWYts8BF2hcreKaeb1aq2ET4wg1H4fLl9LcfK03U9AqehikIVx/fZAMwH4AnpcHkM';
 
   bool get isInitialized => _isInitialized;
   BreezSdkLiquid? get sdk => _sdk;
@@ -20,6 +18,9 @@ class LightningService {
     if (_isInitialized) return;
 
     try {
+      // Ensure config is loaded
+      await ConfigService.instance.initialize();
+
       debugPrint('Breez: Getting app directory...');
       final directory = await getApplicationDocumentsDirectory();
       final workingDir = '${directory.path}/breez_sdk';
@@ -35,7 +36,7 @@ class LightningService {
       // Get default config and update the working directory
       final defaultCfg = defaultConfig(
         network: LiquidNetwork.mainnet,
-        breezApiKey: _breezApiKey,
+        breezApiKey: ConfigService.instance.breezApiKey,
       );
 
       final config = Config(

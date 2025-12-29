@@ -1,0 +1,15 @@
+baseURL = 'https://bolt21.io/'
+languageCode = 'en-us'
+title = 'Bolt21 - Self-Custodial Lightning Wallet'
+
+[params]
+CompanyName = 'Bolt21'
+repoName = 'bolt21'
+tagline = 'Your keys. Your sats. Instant payments.'
+description = 'A simple, self-custodial Bitcoin Lightning wallet with BOLT12 support. Receive mining payouts from Ocean with zero fees.'
+
+[environments.development]
+baseURL = 'http://localhost:1313/'
+
+[environments.production]
+baseURL = 'https://bolt21.io/'

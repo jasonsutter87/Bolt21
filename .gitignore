@@ -44,3 +44,12 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 android/build/
+
+# Security - NEVER commit API keys or sensitive config
+assets/config.json
+*.env
+.env.*
+secrets/
+
+# Security reports
+security-report.md

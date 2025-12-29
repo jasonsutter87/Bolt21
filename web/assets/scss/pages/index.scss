@@ -1,0 +1,277 @@
+// Bolt21 Landing Page Styles
+// Clean, minimal design with transparent sections over gradient
+
+// Colors
+$primary: #F7931A; // Bitcoin orange
+$text-light: rgba(255, 255, 255, 0.7);
+
+// Hero Section
+.hero {
+  color: white;
+  padding: 6rem 0 4rem;
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+
+  .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4rem;
+
+    @media (max-width: 768px) {
+      flex-direction: column;
+      text-align: center;
+    }
+  }
+
+  .hero-content {
+    flex: 1;
+    max-width: 600px;
+  }
+
+  .hero-title {
+    font-size: 3.5rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 1.5rem;
+
+    @media (max-width: 768px) {
+      font-size: 2.5rem;
+    }
+  }
+
+  .hero-subtitle {
+    font-size: 1.25rem;
+    color: $text-light;
+    margin-bottom: 2rem;
+    line-height: 1.6;
+  }
+
+  .hero-cta {
+    display: flex;
+    gap: 1rem;
+
+    @media (max-width: 768px) {
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+  }
+
+  .hero-image {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+
+    @media (max-width: 768px) {
+      margin-top: 2rem;
+    }
+  }
+
+  .phone-mockup {
+    max-width: 300px;
+
+    img {
+      width: 100%;
+      height: auto;
+      border-radius: 2rem;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+    }
+  }
+}
+
+// Buttons
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+
+  &-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  &-primary {
+    background: $primary;
+    color: white;
+
+    &:hover {
+      background: #e8850f;
+      transform: translateY(-2px);
+    }
+  }
+
+  &-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
+    }
+  }
+}
+
+// Features Section
+.features {
+  padding: 6rem 0;
+  color: white;
+
+  .section-title {
+    text-align: center;
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 4rem;
+
+    @media (max-width: 768px) {
+      font-size: 2rem;
+    }
+  }
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+
+    @media (max-width: 992px) {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    @media (max-width: 576px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .feature-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 2rem;
+    border-radius: 1rem;
+    transition: transform 0.2s ease, background 0.2s ease;
+
+    &:hover {
+      transform: translateY(-4px);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+
+    p {
+      color: $text-light;
+      line-height: 1.6;
+      margin: 0;
+    }
+  }
+
+  .feature-icon {
+    width: 3rem;
+    height: 3rem;
+    background: linear-gradient(135deg, $primary, #e8850f);
+    border-radius: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+
+    svg {
+      width: 1.5rem;
+      height: 1.5rem;
+      color: white;
+    }
+  }
+}
+
+// Download Section
+.download-section {
+  padding: 6rem 0;
+  color: white;
+  text-align: center;
+
+  h2 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+
+  p {
+    font-size: 1.25rem;
+    color: $text-light;
+    margin-bottom: 2rem;
+  }
+
+  .download-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .store-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 44px;
+  }
+}
+
+// FAQ Section
+.faq-section {
+  padding: 6rem 0;
+  color: white;
+
+  .section-title {
+    text-align: center;
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 4rem;
+  }
+
+  .faq-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+
+    @media (max-width: 768px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .faq-item {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 2rem;
+    border-radius: 1rem;
+
+    h3 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+
+    p {
+      color: $text-light;
+      line-height: 1.6;
+      margin: 0;
+    }
+  }
+}
+
+// Container
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}

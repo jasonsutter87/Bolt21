@@ -1,10 +1,22 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Secure storage for sensitive wallet data
+///
+/// Security hardening:
+/// - Android: Encrypted shared preferences with hardware-backed keystore
+/// - iOS: Keychain with accessibility restricted to when device is unlocked,
+///        explicitly disabled iCloud backup to prevent cloud sync of secrets
 class SecureStorageService {
   static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(),
-    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+    aOptions: AndroidOptions(
+      encryptedSharedPreferences: true,  // Use EncryptedSharedPreferences
+      sharedPreferencesName: 'bolt21_secure_prefs',
+      preferencesKeyPrefix: 'bolt21_',
+    ),
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.unlocked_this_device,  // More restrictive
+      synchronizable: false,  // CRITICAL: Disable iCloud Keychain sync
+    ),
   );
 
   static const _mnemonicKey = 'bolt21_mnemonic';

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
+import '../services/operation_state_service.dart';
 import '../utils/formatters.dart';
 import '../utils/theme.dart';
 import 'receive_screen.dart';
@@ -19,7 +20,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Bolt21'),
+        title: Image.asset(
+          'assets/images/logo.png',
+          height: 32,
+        ),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -82,6 +87,13 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // Incomplete operations warning
+                if (wallet.hasIncompleteOperations)
+                  _IncompleteOperationsAlert(
+                    operations: wallet.incompleteOperations,
+                    onDismiss: () => wallet.clearIncompleteOperations(),
+                  ),
+
                 // Balance card
                 _BalanceCard(wallet: wallet),
                 const SizedBox(height: 24),
@@ -271,5 +283,131 @@ class _TransactionList extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+/// Alert banner for incomplete operations from previous session
+class _IncompleteOperationsAlert extends StatelessWidget {
+  final List<OperationState> operations;
+  final VoidCallback onDismiss;
+
+  const _IncompleteOperationsAlert({
+    required this.operations,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final sendOps = operations.where((op) => op.isSend).toList();
+    final hasPendingSends = sendOps.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: hasPendingSends
+            ? Bolt21Theme.error.withValues(alpha: 0.1)
+            : Bolt21Theme.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasPendingSends
+              ? Bolt21Theme.error.withValues(alpha: 0.3)
+              : Bolt21Theme.orange.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                hasPendingSends ? Icons.warning_amber : Icons.info_outline,
+                color: hasPendingSends ? Bolt21Theme.error : Bolt21Theme.orange,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  hasPendingSends
+                      ? 'Payment May Be Pending'
+                      : 'Interrupted Operations',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: hasPendingSends
+                        ? Bolt21Theme.error
+                        : Bolt21Theme.orange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            hasPendingSends
+                ? 'A payment was interrupted. Check your transaction history before sending again to avoid double-paying.'
+                : '${operations.length} operation(s) were interrupted. Your balance should still be correct.',
+            style: const TextStyle(
+              fontSize: 13,
+              color: Bolt21Theme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Show each incomplete operation
+          ...operations.map((op) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      op.isSend ? Icons.arrow_upward : Icons.arrow_downward,
+                      size: 14,
+                      color: Bolt21Theme.textSecondary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_operationTypeName(op.type)} - ${op.status.name}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: Bolt21Theme.textSecondary,
+                      ),
+                    ),
+                    if (op.amountSat != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '${op.amountSat} sats',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Bolt21Theme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              )),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: onDismiss,
+                child: const Text('Dismiss'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _operationTypeName(OperationType type) {
+    switch (type) {
+      case OperationType.send:
+        return 'Send';
+      case OperationType.receiveBolt12:
+        return 'Receive (BOLT12)';
+      case OperationType.receiveOnchain:
+        return 'Receive (On-chain)';
+      case OperationType.receiveBolt11:
+        return 'Receive (Invoice)';
+    }
   }
 }

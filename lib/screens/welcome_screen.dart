@@ -16,31 +16,13 @@ class WelcomeScreen extends StatelessWidget {
             children: [
               const Spacer(),
 
-              // Logo/Icon
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: Bolt21Theme.orange.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.bolt,
-                  size: 64,
-                  color: Bolt21Theme.orange,
-                ),
+              // Logo
+              Image.asset(
+                'assets/images/logo.png',
+                width: 200,
+                height: 200,
               ),
-              const SizedBox(height: 32),
-
-              // Title
-              Text(
-                'Bolt21',
-                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Bolt21Theme.orange,
-                ),
-              ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
               // Subtitle
               const Text(
