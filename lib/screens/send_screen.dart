@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
+import '../services/auth_service.dart';
 import '../utils/theme.dart';
+
+/// Threshold in sats above which biometric re-authentication is required
+/// SECURITY: Prevents instant fund drain if phone is stolen while unlocked
+const int _paymentReauthThresholdSats = 100000; // 100k sats (~$100 at current rates)
 
 class SendScreen extends StatefulWidget {
   const SendScreen({super.key});
@@ -59,6 +64,29 @@ class _SendScreenState extends State<SendScreen> {
         return;
       }
       amountSat = BigInt.from(parsed);
+    }
+
+    // SECURITY: Require biometric re-authentication for large payments
+    // This prevents instant fund drain if phone is stolen while unlocked
+    final paymentAmount = amountSat?.toInt() ?? 0;
+    if (paymentAmount >= _paymentReauthThresholdSats) {
+      final canUseBiometrics = await AuthService.canUseBiometrics();
+      if (canUseBiometrics) {
+        final authenticated = await AuthService.authenticate(
+          reason: 'Authenticate to send ${paymentAmount.toString()} sats',
+        );
+        if (!authenticated) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Authentication required for large payments'),
+                backgroundColor: Bolt21Theme.error,
+              ),
+            );
+          }
+          return;
+        }
+      }
     }
 
     // Use idempotent method to prevent double-spend on rapid taps

@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import TrustKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -11,10 +12,63 @@ import UIKit
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
 
+    // SECURITY: Initialize certificate pinning with TrustKit
+    setupCertificatePinning()
+
     // SECURITY: Add screenshot/screen recording protection
     setupScreenshotProtection()
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // SECURITY: TrustKit certificate pinning for all HTTPS connections
+  // Uses Let's Encrypt certificate chain pins (same as Android)
+  private func setupCertificatePinning() {
+    let trustKitConfig: [String: Any] = [
+      kTSKSwizzleNetworkDelegates: true,
+      kTSKPinnedDomains: [
+        // Breez API domains
+        "api.breez.technology": [
+          kTSKEnforcePinning: true,
+          kTSKIncludeSubdomains: true,
+          kTSKExpirationDate: "2026-12-31",
+          kTSKPublicKeyHashes: [
+            // ISRG Root X1 (Let's Encrypt)
+            "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=",
+            // ISRG Root X2 (Let's Encrypt)
+            "diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=",
+            // Let's Encrypt E1 intermediate
+            "J2/oqMTsdhFWW/n85tys6b4yDBtb6idZayIEBx7QTxA=",
+            // Let's Encrypt R3 intermediate
+            "jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=",
+          ],
+        ],
+        "breez.technology": [
+          kTSKEnforcePinning: true,
+          kTSKIncludeSubdomains: true,
+          kTSKExpirationDate: "2026-12-31",
+          kTSKPublicKeyHashes: [
+            "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=",
+            "diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=",
+            "J2/oqMTsdhFWW/n85tys6b4yDBtb6idZayIEBx7QTxA=",
+            "jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=",
+          ],
+        ],
+        "greenlight.blockstream.com": [
+          kTSKEnforcePinning: true,
+          kTSKIncludeSubdomains: true,
+          kTSKExpirationDate: "2026-12-31",
+          kTSKPublicKeyHashes: [
+            "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=",
+            "diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=",
+            "J2/oqMTsdhFWW/n85tys6b4yDBtb6idZayIEBx7QTxA=",
+            "jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=",
+          ],
+        ],
+      ]
+    ]
+
+    TrustKit.initSharedInstance(withConfiguration: trustKitConfig)
   }
 
   private func setupScreenshotProtection() {
