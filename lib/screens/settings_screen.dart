@@ -38,26 +38,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _toggleBiometric(bool value) async {
+    print('DEBUG: _toggleBiometric called with value=$value');
+    print('DEBUG: _biometricAvailable=$_biometricAvailable');
+
     if (value) {
+      print('DEBUG: Attempting authentication...');
       // Use device credentials (PIN/pattern allowed) for initial enable
       // This is a one-time setup flow - actual unlock will require biometrics only
       final success = await AuthService.authenticateWithDeviceCredentials(
         reason: 'Authenticate to enable $_biometricType lock',
       );
+      print('DEBUG: Authentication result: $success');
       if (!success) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Authentication failed or cancelled'),
               backgroundColor: Bolt21Theme.error,
+              duration: Duration(seconds: 3),
             ),
           );
         }
         return;
       }
     }
+
+    print('DEBUG: Saving biometric enabled=$value');
     await AuthService.setBiometricEnabled(value);
+
+    // Verify it was saved
+    final savedValue = await AuthService.isBiometricEnabled();
+    print('DEBUG: Verified saved value=$savedValue');
+
     setState(() => _biometricEnabled = value);
+    print('DEBUG: setState called, _biometricEnabled=$_biometricEnabled');
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -66,6 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ? '$_biometricType lock enabled'
             : '$_biometricType lock disabled'),
           backgroundColor: Bolt21Theme.success,
+          duration: const Duration(seconds: 3),
         ),
       );
     }

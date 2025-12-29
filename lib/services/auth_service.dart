@@ -64,13 +64,20 @@ class AuthService {
   static Future<bool> authenticateWithDeviceCredentials({
     String reason = 'Authenticate to enable biometric lock',
   }) async {
+    print('DEBUG AUTH: authenticateWithDeviceCredentials called');
+    print('DEBUG AUTH: reason=$reason');
     try {
-      return await _auth.authenticate(
+      final result = await _auth.authenticate(
         localizedReason: reason,
         biometricOnly: false,  // Allow PIN/pattern for this one-time setup
       );
+      print('DEBUG AUTH: authenticate returned $result');
+      return result;
     } on PlatformException catch (e) {
-      print('Auth error: ${e.code} - ${e.message}');
+      print('DEBUG AUTH: PlatformException: ${e.code} - ${e.message}');
+      return false;
+    } catch (e) {
+      print('DEBUG AUTH: Unknown error: $e');
       return false;
     }
   }
