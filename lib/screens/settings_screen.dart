@@ -38,56 +38,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _toggleBiometric(bool value) async {
-    String debugLog = 'Toggle: $value\nAvailable: $_biometricAvailable\n';
-
     if (value) {
-      debugLog += 'Authenticating...\n';
-
-      // Use device credentials (PIN/pattern allowed) for initial enable
-      final result = await AuthService.authenticateWithDeviceCredentialsDebug(
+      // Authenticate before enabling
+      final success = await AuthService.authenticateWithDeviceCredentials(
         reason: 'Authenticate to enable $_biometricType lock',
       );
-
-      debugLog += 'Auth result: ${result['success']}\n';
-      if (result['error'] != null) {
-        debugLog += 'Error: ${result['error']}\n';
-      }
-
-      if (result['success'] != true) {
+      if (!success) {
         if (mounted) {
-          _showDebugDialog('Auth Failed', debugLog);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Authentication cancelled'),
+              backgroundColor: Bolt21Theme.error,
+            ),
+          );
         }
         return;
       }
     }
 
     await AuthService.setBiometricEnabled(value);
-    final savedValue = await AuthService.isBiometricEnabled();
-    debugLog += 'Saved: $savedValue\n';
-
     setState(() => _biometricEnabled = value);
 
     if (mounted) {
-      _showDebugDialog(value ? 'Enabled!' : 'Disabled!', debugLog);
-    }
-  }
-
-  void _showDebugDialog(String title, String message) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: SingleChildScrollView(
-          child: Text(message, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(value
+            ? '$_biometricType lock enabled'
+            : '$_biometricType lock disabled'),
+          backgroundColor: Bolt21Theme.success,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+      );
+    }
   }
 
   @override

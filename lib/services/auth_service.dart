@@ -74,23 +74,6 @@ class AuthService {
     }
   }
 
-  /// Debug version that returns error details
-  static Future<Map<String, dynamic>> authenticateWithDeviceCredentialsDebug({
-    String reason = 'Authenticate to enable biometric lock',
-  }) async {
-    try {
-      final result = await _auth.authenticate(
-        localizedReason: reason,
-        biometricOnly: false,
-      );
-      return {'success': result, 'error': null};
-    } on PlatformException catch (e) {
-      return {'success': false, 'error': '${e.code}: ${e.message}'};
-    } catch (e) {
-      return {'success': false, 'error': e.toString()};
-    }
-  }
-
   /// Get a friendly name for available biometrics
   static Future<String> getBiometricTypeName() async {
     final types = await getAvailableBiometrics();
