@@ -21,6 +21,8 @@ class SecureStorageService {
 
   static const _mnemonicKey = 'bolt21_mnemonic';
   static const _walletInitializedKey = 'bolt21_wallet_initialized';
+  static const _onChainAddressKey = 'bolt21_onchain_address';
+  static const _bolt12OfferKey = 'bolt21_bolt12_offer';
 
   /// Save the mnemonic seed phrase securely
   static Future<void> saveMnemonic(String mnemonic) async {
@@ -43,6 +45,28 @@ class SecureStorageService {
   static Future<void> clearWallet() async {
     await _storage.delete(key: _mnemonicKey);
     await _storage.delete(key: _walletInitializedKey);
+    await _storage.delete(key: _onChainAddressKey);
+    await _storage.delete(key: _bolt12OfferKey);
+  }
+
+  /// Save on-chain address
+  static Future<void> saveOnChainAddress(String address) async {
+    await _storage.write(key: _onChainAddressKey, value: address);
+  }
+
+  /// Get stored on-chain address
+  static Future<String?> getOnChainAddress() async {
+    return await _storage.read(key: _onChainAddressKey);
+  }
+
+  /// Save BOLT12 offer
+  static Future<void> saveBolt12Offer(String offer) async {
+    await _storage.write(key: _bolt12OfferKey, value: offer);
+  }
+
+  /// Get stored BOLT12 offer
+  static Future<String?> getBolt12Offer() async {
+    return await _storage.read(key: _bolt12OfferKey);
   }
 
   /// Generic read for any key (used by other services)

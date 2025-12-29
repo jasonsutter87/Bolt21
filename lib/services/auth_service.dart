@@ -42,17 +42,31 @@ class AuthService {
     );
   }
 
-  /// Authenticate with biometrics
+  /// Authenticate with biometrics only (for app unlock, payments)
+  /// SECURITY: biometricOnly: true prevents PIN/pattern fallback
   static Future<bool> authenticate({
     String reason = 'Authenticate to access Bolt21',
   }) async {
     try {
-      // SECURITY: biometricOnly: true prevents PIN/pattern fallback
-      // For a Bitcoin wallet, physical biometric is required - device PIN
-      // can be shoulder-surfed or obtained through social engineering
       return await _auth.authenticate(
         localizedReason: reason,
         biometricOnly: true,
+      );
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Authenticate allowing device credentials (for enabling biometric setting)
+  /// This is less secure but needed for the initial "enable biometrics" flow
+  /// since we can't require biometrics before biometrics is enabled
+  static Future<bool> authenticateWithDeviceCredentials({
+    String reason = 'Authenticate to enable biometric lock',
+  }) async {
+    try {
+      return await _auth.authenticate(
+        localizedReason: reason,
+        biometricOnly: false,  // Allow PIN/pattern for this one-time setup
       );
     } on PlatformException {
       return false;

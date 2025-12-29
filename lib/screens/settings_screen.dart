@@ -39,9 +39,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _toggleBiometric(bool value) async {
     if (value) {
-      // Authenticate first before enabling
-      final success = await AuthService.authenticate(
-        reason: 'Authenticate to enable $_biometricType',
+      // Use device credentials (PIN/pattern allowed) for initial enable
+      // This is a one-time setup flow - actual unlock will require biometrics only
+      final success = await AuthService.authenticateWithDeviceCredentials(
+        reason: 'Authenticate to enable $_biometricType lock',
       );
       if (!success) return;
     }

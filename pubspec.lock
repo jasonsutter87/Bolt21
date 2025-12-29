@@ -170,7 +170,7 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: main
+      ref: d3e0bf44404bbadcd69be1aaf56a8389a83eb6e6
       resolved-ref: d3e0bf44404bbadcd69be1aaf56a8389a83eb6e6
       url: "https://github.com/breez/breez-sdk-liquid-flutter"
     source: git

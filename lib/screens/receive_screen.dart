@@ -238,6 +238,7 @@ class _OnChainTab extends StatelessWidget {
                   child: _QrCard(
                     data: 'bitcoin:${wallet.onChainAddress!}',
                     label: wallet.onChainAddress!,
+                    copyData: wallet.onChainAddress!,  // Copy address without bitcoin: prefix
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -255,31 +256,57 @@ class _OnChainTab extends StatelessWidget {
 class _QrCard extends StatelessWidget {
   final String data;
   final String label;
+  /// The actual data to copy (may differ from QR data, e.g., bitcoin: prefix)
+  final String? copyData;
 
-  const _QrCard({required this.data, required this.label});
+  const _QrCard({required this.data, required this.label, this.copyData});
 
   @override
   Widget build(BuildContext context) {
+    final dataToCopy = copyData ?? data;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: QrImageView(
-                data: data,
-                version: QrVersions.auto,
-                size: 200,
-                backgroundColor: Colors.white,
+            // Long-press QR code to copy
+            GestureDetector(
+              onLongPress: () {
+                Clipboard.setData(ClipboardData(text: dataToCopy));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Copied to clipboard'),
+                    backgroundColor: Bolt21Theme.success,
+                  ),
+                );
+                // Haptic feedback
+                HapticFeedback.mediumImpact();
+              },
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: QrImageView(
+                  data: data,
+                  version: QrVersions.auto,
+                  size: 200,
+                  backgroundColor: Colors.white,
+                ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            const Text(
+              'Long press to copy',
+              style: TextStyle(
+                fontSize: 11,
+                color: Bolt21Theme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(

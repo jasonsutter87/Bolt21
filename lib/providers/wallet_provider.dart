@@ -3,6 +3,7 @@ import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:synchronized/synchronized.dart';
 import '../services/lightning_service.dart';
 import '../services/operation_state_service.dart';
+import '../services/secure_storage_service.dart';
 import '../utils/retry_helper.dart';
 import '../utils/secure_logger.dart';
 
@@ -66,6 +67,10 @@ class WalletProvider extends ChangeNotifier {
       await _lightningService.initialize(mnemonic: mnemonic);
       _isInitialized = true;
       await _refreshAll();
+
+      // Restore previously generated addresses from secure storage
+      _onChainAddress = await SecureStorageService.getOnChainAddress();
+      _bolt12Offer = await SecureStorageService.getBolt12Offer();
 
       // Check for any incomplete operations from previous session
       await _checkIncompleteOperations();
@@ -160,6 +165,8 @@ class WalletProvider extends ChangeNotifier {
     try {
       await _operationStateService.markExecuting(operation.id);
       _onChainAddress = await _lightningService.getOnChainAddress();
+      // Persist to secure storage for app restart
+      await SecureStorageService.saveOnChainAddress(_onChainAddress!);
       await _operationStateService.markCompleted(operation.id);
       notifyListeners();
       return _onChainAddress;
@@ -182,6 +189,8 @@ class WalletProvider extends ChangeNotifier {
     try {
       await _operationStateService.markExecuting(operation.id);
       _bolt12Offer = await _lightningService.generateBolt12Offer();
+      // Persist to secure storage for app restart
+      await SecureStorageService.saveBolt12Offer(_bolt12Offer!);
       await _operationStateService.markCompleted(operation.id);
       notifyListeners();
       return _bolt12Offer;
