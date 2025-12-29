@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import '../services/lightning_service.dart';
@@ -8,6 +9,9 @@ import '../utils/retry_helper.dart';
 class WalletProvider extends ChangeNotifier {
   final LightningService _lightningService = LightningService();
   final OperationStateService _operationStateService = OperationStateService();
+
+  // Mutex lock to prevent concurrent payment operations
+  Completer<void>? _sendLock;
 
   // State
   bool _isLoading = false;
@@ -232,26 +236,42 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  /// Send payment with idempotency - checks if operation already exists
+  /// Send payment with idempotency and mutex lock - prevents double-spend
   Future<String?> sendPaymentIdempotent(
     String destination, {
     BigInt? amountSat,
     String? idempotencyKey,
   }) async {
-    // Check if there's already a pending/executing operation for this destination
-    final existing = _operationStateService.getAllOperations().where((op) =>
-        op.destination == destination &&
-        op.amountSat == amountSat?.toInt() &&
-        op.isIncomplete);
-
-    if (existing.isNotEmpty) {
-      debugPrint('Duplicate payment blocked - operation ${existing.first.id} already in progress');
-      _error = 'A payment to this destination is already in progress';
+    // Mutex lock - prevent concurrent payment attempts (race condition fix)
+    if (_sendLock != null && !_sendLock!.isCompleted) {
+      debugPrint('Payment blocked - another payment is in progress');
+      _error = 'Another payment is in progress. Please wait.';
       notifyListeners();
       return null;
     }
 
-    return sendPayment(destination, amountSat: amountSat);
+    // Acquire lock
+    _sendLock = Completer<void>();
+
+    try {
+      // Check if there's already a pending/executing operation for this destination
+      final existing = _operationStateService.getAllOperations().where((op) =>
+          op.destination == destination &&
+          op.amountSat == amountSat?.toInt() &&
+          op.isIncomplete);
+
+      if (existing.isNotEmpty) {
+        debugPrint('Duplicate payment blocked - operation ${existing.first.id} already in progress');
+        _error = 'A payment to this destination is already in progress';
+        notifyListeners();
+        return null;
+      }
+
+      return await sendPayment(destination, amountSat: amountSat);
+    } finally {
+      // Release lock
+      _sendLock?.complete();
+    }
   }
 
   void _setLoading(bool loading) {

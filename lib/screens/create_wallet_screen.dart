@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
+import '../utils/secure_clipboard.dart';
 import 'home_screen.dart';
 
 class CreateWalletScreen extends StatefulWidget {
@@ -190,18 +191,15 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
                         ),
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
-                          onPressed: () {
-                            Clipboard.setData(
-                                ClipboardData(text: _mnemonic ?? ''));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Copied to clipboard'),
-                                backgroundColor: Bolt21Theme.success,
-                              ),
+                          onPressed: () async {
+                            await SecureClipboard.copyWithTimeout(
+                              context,
+                              _mnemonic ?? '',
+                              timeout: const Duration(seconds: 30),
                             );
                           },
                           icon: const Icon(Icons.copy, size: 18),
-                          label: const Text('Copy to Clipboard'),
+                          label: const Text('Copy to Clipboard (30s auto-clear)'),
                         ),
                       ],
                     ),

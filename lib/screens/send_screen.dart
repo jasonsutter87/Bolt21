@@ -45,9 +45,25 @@ class _SendScreenState extends State<SendScreen> {
 
     if (input.isEmpty) return;
 
-    // Breez SDK automatically parses and handles BOLT11, BOLT12, Lightning Addresses, etc.
+    // Parse amount if provided (for BOLT12 offers)
+    BigInt? amountSat;
+    if (_amountController.text.isNotEmpty) {
+      final parsed = int.tryParse(_amountController.text.trim());
+      if (parsed == null || parsed <= 0 || parsed > 2100000000000000) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid amount. Must be between 1 and 21M BTC in sats.'),
+            backgroundColor: Bolt21Theme.error,
+          ),
+        );
+        return;
+      }
+      amountSat = BigInt.from(parsed);
+    }
+
+    // Use idempotent method to prevent double-spend on rapid taps
     // Returns operation ID on success, null on failure
-    final operationId = await wallet.sendPayment(input);
+    final operationId = await wallet.sendPaymentIdempotent(input, amountSat: amountSat);
 
     if (operationId != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,6 +103,49 @@ class _SendScreenState extends State<SendScreen> {
     );
   }
 
+  /// Validate and sanitize QR code content to prevent injection attacks
+  String? _validateQrCode(String? rawValue) {
+    if (rawValue == null || rawValue.isEmpty) return null;
+
+    // Limit QR code size to prevent DoS (max 4KB is generous for any valid payment)
+    const maxLength = 4096;
+    if (rawValue.length > maxLength) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('QR code too large. Maximum 4KB allowed.'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+      return null;
+    }
+
+    // Basic sanitization - remove control characters except newlines
+    final sanitized = rawValue.replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '');
+
+    // Validate it looks like a valid payment destination
+    final lower = sanitized.toLowerCase().trim();
+    final isValidPrefix = lower.startsWith('lno') ||      // BOLT12 offer
+        lower.startsWith('lnbc') ||                        // BOLT11 mainnet
+        lower.startsWith('lntb') ||                        // BOLT11 testnet
+        lower.startsWith('bitcoin:') ||                    // BIP21 URI
+        lower.startsWith('bc1') ||                         // Bech32 address
+        lower.startsWith('1') ||                           // Legacy P2PKH
+        lower.startsWith('3') ||                           // P2SH address
+        lower.contains('@');                               // Lightning address
+
+    if (!isValidPrefix) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid QR code. Not a valid payment destination.'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+      return null;
+    }
+
+    return sanitized.trim();
+  }
+
   Widget _buildScanner() {
     return Stack(
       children: [
@@ -94,12 +153,13 @@ class _SendScreenState extends State<SendScreen> {
           onDetect: (capture) {
             final barcodes = capture.barcodes;
             for (final barcode in barcodes) {
-              if (barcode.rawValue != null) {
+              final validated = _validateQrCode(barcode.rawValue);
+              if (validated != null) {
                 setState(() {
-                  _controller.text = barcode.rawValue!;
+                  _controller.text = validated;
                   _isScanning = false;
                 });
-                _detectPaymentType(barcode.rawValue!);
+                _detectPaymentType(validated);
                 break;
               }
             }

@@ -5,6 +5,7 @@ import '../providers/wallet_provider.dart';
 import '../services/auth_service.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
+import '../utils/secure_clipboard.dart';
 import 'welcome_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -427,19 +428,17 @@ class _BackupSheetState extends State<_BackupSheet> {
               ),
               const SizedBox(height: 24),
 
-              // Copy button
+              // Copy button with security warning
               OutlinedButton.icon(
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _mnemonic ?? ''));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Copied to clipboard'),
-                      backgroundColor: Bolt21Theme.success,
-                    ),
+                onPressed: () async {
+                  await SecureClipboard.copyWithTimeout(
+                    context,
+                    _mnemonic ?? '',
+                    timeout: const Duration(seconds: 30),
                   );
                 },
                 icon: const Icon(Icons.copy),
-                label: const Text('Copy to Clipboard'),
+                label: const Text('Copy to Clipboard (30s auto-clear)'),
               ),
             ],
           ],

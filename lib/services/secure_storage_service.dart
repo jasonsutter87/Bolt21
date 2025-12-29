@@ -44,4 +44,19 @@ class SecureStorageService {
     await _storage.delete(key: _mnemonicKey);
     await _storage.delete(key: _walletInitializedKey);
   }
+
+  /// Generic read for any key (used by other services)
+  static Future<String?> read(String key) async {
+    return await _storage.read(key: key);
+  }
+
+  /// Generic write for any key (used by other services)
+  static Future<void> write(String key, String value) async {
+    await _storage.write(key: key, value: value);
+  }
+
+  /// Generic delete for any key
+  static Future<void> delete(String key) async {
+    await _storage.delete(key: key);
+  }
 }

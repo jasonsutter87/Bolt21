@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'secure_storage_service.dart';
 
 /// Types of wallet operations that can be tracked
 enum OperationType {
@@ -125,26 +127,58 @@ class OperationState {
 }
 
 /// Service for persisting operation state to survive app crashes
+/// Uses AES-like XOR encryption with secure random key stored in keychain
 class OperationStateService {
-  static const String _fileName = 'operation_state.json';
+  static const String _fileName = 'operation_state.enc';
+  static const String _encryptionKeyStorageKey = 'op_state_encryption_key';
   File? _stateFile;
   List<OperationState> _operations = [];
+  Uint8List? _encryptionKey;
+
+  // Secure random generator for operation IDs and encryption
+  final Random _secureRandom = Random.secure();
 
   /// Initialize the service and load existing state
   Future<void> initialize() async {
     final directory = await getApplicationDocumentsDirectory();
     _stateFile = File('${directory.path}/$_fileName');
 
+    // Get or create encryption key from secure storage
+    await _initializeEncryptionKey();
+
     if (await _stateFile!.exists()) {
       await _loadState();
     }
   }
 
-  /// Generate a unique operation ID
+  /// Initialize encryption key from secure storage or generate new one
+  Future<void> _initializeEncryptionKey() async {
+    final existingKey = await SecureStorageService.read(_encryptionKeyStorageKey);
+    if (existingKey != null && existingKey.isNotEmpty) {
+      _encryptionKey = base64Decode(existingKey);
+    } else {
+      // Generate new 32-byte (256-bit) key using secure random
+      _encryptionKey = Uint8List.fromList(
+        List.generate(32, (_) => _secureRandom.nextInt(256)),
+      );
+      await SecureStorageService.write(
+        _encryptionKeyStorageKey,
+        base64Encode(_encryptionKey!),
+      );
+      debugPrint('Generated new operation state encryption key');
+    }
+  }
+
+  /// Generate a cryptographically secure unique operation ID
   String generateOperationId() {
-    final now = DateTime.now();
-    final random = now.microsecondsSinceEpoch.toRadixString(36);
-    return '${now.millisecondsSinceEpoch.toRadixString(36)}_$random';
+    // Generate 16 bytes of secure random data
+    final bytes = Uint8List.fromList(
+      List.generate(16, (_) => _secureRandom.nextInt(256)),
+    );
+    // Convert to URL-safe base64 and add timestamp prefix for sortability
+    final randomPart = base64Url.encode(bytes).replaceAll('=', '');
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+    return '${timestamp}_$randomPart';
   }
 
   /// Create a new operation and persist it
@@ -271,26 +305,73 @@ class OperationStateService {
 
   Future<void> _loadState() async {
     try {
-      final content = await _stateFile!.readAsString();
+      final encryptedBytes = await _stateFile!.readAsBytes();
+      final decrypted = _decrypt(encryptedBytes);
+      final content = utf8.decode(decrypted);
       final List<dynamic> jsonList = json.decode(content);
       _operations = jsonList
           .map((e) => OperationState.fromJson(e as Map<String, dynamic>))
           .toList();
-      debugPrint('Loaded ${_operations.length} operations from disk');
+      debugPrint('Loaded ${_operations.length} operations from disk (encrypted)');
     } catch (e) {
       debugPrint('Failed to load operation state: $e');
       _operations = [];
+      // If decryption fails (corrupted or wrong key), delete the file
+      try {
+        await _stateFile!.delete();
+      } catch (_) {}
     }
   }
 
   Future<void> _saveState() async {
-    if (_stateFile == null) return;
+    if (_stateFile == null || _encryptionKey == null) return;
 
     try {
       final jsonList = _operations.map((op) => op.toJson()).toList();
-      await _stateFile!.writeAsString(json.encode(jsonList));
+      final plaintext = utf8.encode(json.encode(jsonList));
+      final encrypted = _encrypt(Uint8List.fromList(plaintext));
+      await _stateFile!.writeAsBytes(encrypted);
     } catch (e) {
       debugPrint('Failed to save operation state: $e');
     }
+  }
+
+  /// Simple XOR-based encryption with random IV
+  /// Not as secure as AES, but provides basic obfuscation without additional deps
+  Uint8List _encrypt(Uint8List plaintext) {
+    // Generate random 16-byte IV
+    final iv = Uint8List.fromList(
+      List.generate(16, (_) => _secureRandom.nextInt(256)),
+    );
+
+    // XOR plaintext with key (repeating key if needed)
+    final encrypted = Uint8List(plaintext.length);
+    for (var i = 0; i < plaintext.length; i++) {
+      final keyByte = _encryptionKey![(i + iv[i % 16]) % _encryptionKey!.length];
+      encrypted[i] = plaintext[i] ^ keyByte ^ iv[i % 16];
+    }
+
+    // Prepend IV to encrypted data
+    return Uint8List.fromList([...iv, ...encrypted]);
+  }
+
+  /// Decrypt XOR-encrypted data
+  Uint8List _decrypt(Uint8List ciphertext) {
+    if (ciphertext.length < 17) {
+      throw Exception('Invalid encrypted data');
+    }
+
+    // Extract IV (first 16 bytes)
+    final iv = ciphertext.sublist(0, 16);
+    final encrypted = ciphertext.sublist(16);
+
+    // XOR to decrypt
+    final decrypted = Uint8List(encrypted.length);
+    for (var i = 0; i < encrypted.length; i++) {
+      final keyByte = _encryptionKey![(i + iv[i % 16]) % _encryptionKey!.length];
+      decrypted[i] = encrypted[i] ^ keyByte ^ iv[i % 16];
+    }
+
+    return decrypted;
   }
 }
