@@ -38,52 +38,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _toggleBiometric(bool value) async {
-    print('DEBUG: _toggleBiometric called with value=$value');
-    print('DEBUG: _biometricAvailable=$_biometricAvailable');
+    String debugLog = 'Toggle: $value\nAvailable: $_biometricAvailable\n';
 
     if (value) {
-      print('DEBUG: Attempting authentication...');
+      debugLog += 'Authenticating...\n';
+
       // Use device credentials (PIN/pattern allowed) for initial enable
-      // This is a one-time setup flow - actual unlock will require biometrics only
-      final success = await AuthService.authenticateWithDeviceCredentials(
+      final result = await AuthService.authenticateWithDeviceCredentialsDebug(
         reason: 'Authenticate to enable $_biometricType lock',
       );
-      print('DEBUG: Authentication result: $success');
-      if (!success) {
+
+      debugLog += 'Auth result: ${result['success']}\n';
+      if (result['error'] != null) {
+        debugLog += 'Error: ${result['error']}\n';
+      }
+
+      if (result['success'] != true) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Authentication failed or cancelled'),
-              backgroundColor: Bolt21Theme.error,
-              duration: Duration(seconds: 3),
-            ),
-          );
+          _showDebugDialog('Auth Failed', debugLog);
         }
         return;
       }
     }
 
-    print('DEBUG: Saving biometric enabled=$value');
     await AuthService.setBiometricEnabled(value);
-
-    // Verify it was saved
     final savedValue = await AuthService.isBiometricEnabled();
-    print('DEBUG: Verified saved value=$savedValue');
+    debugLog += 'Saved: $savedValue\n';
 
     setState(() => _biometricEnabled = value);
-    print('DEBUG: setState called, _biometricEnabled=$_biometricEnabled');
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(value
-            ? '$_biometricType lock enabled'
-            : '$_biometricType lock disabled'),
-          backgroundColor: Bolt21Theme.success,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      _showDebugDialog(value ? 'Enabled!' : 'Disabled!', debugLog);
     }
+  }
+
+  void _showDebugDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Text(message, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
