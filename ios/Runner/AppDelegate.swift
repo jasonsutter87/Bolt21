@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import TrustKit
+import os.log
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -90,9 +91,9 @@ import TrustKit
   }
 
   @objc private func userDidTakeScreenshot() {
-    // Log or alert user that screenshot was taken
-    // In a real app, you might want to show an alert warning about security
-    print("WARNING: Screenshot detected - sensitive data may have been captured")
+    // SECURITY: Use os_log instead of print() to prevent system log exposure
+    // os_log with .fault level goes to private logs only, not accessible to other apps
+    os_log("Screenshot detected", log: .default, type: .fault)
   }
 
   @objc private func screenCaptureStatusDidChange() {
