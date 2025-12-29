@@ -4,6 +4,7 @@ import 'package:synchronized/synchronized.dart';
 import '../services/lightning_service.dart';
 import '../services/operation_state_service.dart';
 import '../utils/retry_helper.dart';
+import '../utils/secure_logger.dart';
 
 /// Wallet state management
 class WalletProvider extends ChangeNotifier {
@@ -70,7 +71,7 @@ class WalletProvider extends ChangeNotifier {
       await _checkIncompleteOperations();
     } catch (e) {
       _error = e.toString();
-      debugPrint('Wallet initialization error: $e');
+      SecureLogger.error('Wallet initialization error', error: e, tag: 'Wallet');
     } finally {
       _setLoading(false);
     }
@@ -81,7 +82,7 @@ class WalletProvider extends ChangeNotifier {
     _incompleteOperations = _operationStateService.getIncompleteOperations();
 
     if (_incompleteOperations.isNotEmpty) {
-      debugPrint('Found ${_incompleteOperations.length} incomplete operations');
+      SecureLogger.info('Found ${_incompleteOperations.length} incomplete operations', tag: 'Wallet');
 
       // For operations that were in "executing" state, mark as unknown
       // since we don't know if they completed
@@ -143,7 +144,7 @@ class WalletProvider extends ChangeNotifier {
       if (_error == null) {
         _error = 'Failed to refresh: ${e.toString()}';
       }
-      debugPrint('Refresh failed: $e');
+      SecureLogger.warn('Refresh failed', tag: 'Wallet');
     }
     notifyListeners();
   }
@@ -196,6 +197,22 @@ class WalletProvider extends ChangeNotifier {
   /// Returns operation ID on success for tracking, null on failure
   Future<String?> sendPayment(String destination, {BigInt? amountSat}) async {
     if (!_isInitialized) return null;
+
+    // SECURITY: Validate balance before attempting send
+    if (amountSat != null) {
+      final balance = totalBalanceSats;
+      if (amountSat.toInt() > balance) {
+        _error = 'Insufficient balance. Available: $balance sats';
+        notifyListeners();
+        return null;
+      }
+      if (amountSat <= BigInt.zero) {
+        _error = 'Invalid amount. Must be greater than 0';
+        notifyListeners();
+        return null;
+      }
+    }
+
     _setLoading(true);
 
     // Create operation record BEFORE starting - this is critical for crash recovery
@@ -245,7 +262,7 @@ class WalletProvider extends ChangeNotifier {
   }) async {
     // Check if lock is already held (non-blocking check for UX)
     if (_sendLock.locked) {
-      debugPrint('Payment blocked - another payment is in progress');
+      SecureLogger.warn('Payment blocked - another payment in progress', tag: 'Wallet');
       _error = 'Another payment is in progress. Please wait.';
       notifyListeners();
       return null;
@@ -260,7 +277,7 @@ class WalletProvider extends ChangeNotifier {
           op.isIncomplete);
 
       if (existing.isNotEmpty) {
-        debugPrint('Duplicate payment blocked - operation ${existing.first.id} already in progress');
+        SecureLogger.warn('Duplicate payment blocked', tag: 'Wallet');
         _error = 'A payment to this destination is already in progress';
         notifyListeners();
         return null;

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'secure_logger.dart';
 
 /// Exception indicating a retryable network error
 class RetryableException implements Exception {
@@ -91,13 +91,15 @@ Future<T> withRetry<T>({
       final shouldRetry = _shouldRetry(exception, config.shouldRetry);
 
       if (!shouldRetry || attempt >= config.maxAttempts) {
-        debugPrint(
-            '${operationName ?? 'Operation'} failed after $attempt attempt(s): $e');
+        SecureLogger.error(
+            '${operationName ?? 'Operation'} failed after $attempt attempt(s)',
+            tag: 'Retry');
         rethrow;
       }
 
-      debugPrint(
-          '${operationName ?? 'Operation'} attempt $attempt failed, retrying in ${currentDelay.inMilliseconds}ms: $e');
+      SecureLogger.warn(
+          '${operationName ?? 'Operation'} attempt $attempt failed, retrying in ${currentDelay.inMilliseconds}ms',
+          tag: 'Retry');
 
       await Future.delayed(currentDelay);
 
@@ -136,13 +138,15 @@ Future<RetryResult<T>> withRetryResult<T>({
       final shouldRetry = _shouldRetry(lastError, config.shouldRetry);
 
       if (!shouldRetry || attempt >= config.maxAttempts) {
-        debugPrint(
-            '${operationName ?? 'Operation'} failed after $attempt attempt(s): $e');
+        SecureLogger.error(
+            '${operationName ?? 'Operation'} failed after $attempt attempt(s)',
+            tag: 'Retry');
         return RetryResult.failure(lastError, attempt);
       }
 
-      debugPrint(
-          '${operationName ?? 'Operation'} attempt $attempt failed, retrying in ${currentDelay.inMilliseconds}ms: $e');
+      SecureLogger.warn(
+          '${operationName ?? 'Operation'} attempt $attempt failed, retrying in ${currentDelay.inMilliseconds}ms',
+          tag: 'Retry');
 
       await Future.delayed(currentDelay);
 

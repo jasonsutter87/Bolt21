@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../utils/secure_logger.dart';
 
 /// Secure configuration service for API keys and sensitive config
 ///
@@ -27,7 +28,7 @@ class ConfigService {
     if (compileTimeKey.isNotEmpty) {
       _breezApiKey = compileTimeKey;
       _isInitialized = true;
-      debugPrint('Config: Loaded API key from compile-time define');
+      SecureLogger.info('Loaded API key from compile-time define', tag: 'Config');
       return;
     }
 
@@ -41,20 +42,18 @@ class ConfigService {
         if (keyMatch != null) {
           _breezApiKey = keyMatch.group(1);
           _isInitialized = true;
-          debugPrint('Config: Loaded API key from development config file');
+          SecureLogger.info('Loaded API key from dev config', tag: 'Config');
           return;
         }
       } catch (e) {
-        debugPrint('Config: No development config file found');
+        SecureLogger.warn('No development config file found', tag: 'Config');
       }
     }
 
     _isInitialized = true;
 
     if (_breezApiKey == null) {
-      debugPrint('WARNING: No Breez API key configured!');
-      debugPrint('For development: Create assets/config.json with {"breez_api_key": "YOUR_KEY"}');
-      debugPrint('For production: Build with --dart-define=BREEZ_API_KEY=YOUR_KEY');
+      SecureLogger.warn('No Breez API key configured', tag: 'Config');
     }
   }
 

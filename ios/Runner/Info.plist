@@ -47,5 +47,43 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Bolt21 uses Face ID to securely unlock your wallet and authorize transactions.</string>
+	<!-- App Transport Security - enforce HTTPS -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Require HTTPS for all connections -->
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<!-- Require TLS 1.2+ and forward secrecy -->
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>api.breez.technology</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSExceptionRequiresForwardSecrecy</key>
+				<true/>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.2</string>
+			</dict>
+			<key>breez.technology</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSExceptionRequiresForwardSecrecy</key>
+				<true/>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.2</string>
+			</dict>
+			<key>greenlight.blockstream.com</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSExceptionRequiresForwardSecrecy</key>
+				<true/>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.2</string>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

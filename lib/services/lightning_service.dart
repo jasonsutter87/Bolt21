@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:bip39/bip39.dart' as bip39;
-import 'package:flutter/foundation.dart';
 import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'config_service.dart';
+import '../utils/secure_logger.dart';
 
 /// Service for managing Lightning node operations via Breez SDK Liquid
 class LightningService {
@@ -21,18 +21,17 @@ class LightningService {
       // Ensure config is loaded
       await ConfigService.instance.initialize();
 
-      debugPrint('Breez: Getting app directory...');
+      SecureLogger.info('Initializing SDK...', tag: 'Breez');
       final directory = await getApplicationDocumentsDirectory();
       final workingDir = '${directory.path}/breez_sdk';
 
       // Ensure directory exists
       await Directory(workingDir).create(recursive: true);
-      debugPrint('Breez: Directory ready: $workingDir');
 
       // Generate mnemonic if not provided
       final seedPhrase = mnemonic ?? generateMnemonic();
 
-      debugPrint('Breez: Creating config...');
+      SecureLogger.info('Creating config...', tag: 'Breez');
       // Get default config and update the working directory
       final defaultCfg = defaultConfig(
         network: LiquidNetwork.mainnet,
@@ -58,7 +57,7 @@ class LightningService {
         onchainSyncRequestTimeoutSec: defaultCfg.onchainSyncRequestTimeoutSec,
       );
 
-      debugPrint('Breez: Connecting...');
+      SecureLogger.info('Connecting...', tag: 'Breez');
       final connectRequest = ConnectRequest(
         mnemonic: seedPhrase,
         config: config,
@@ -67,10 +66,9 @@ class LightningService {
       _sdk = await connect(req: connectRequest);
       _isInitialized = true;
 
-      debugPrint('Breez SDK initialized successfully');
+      SecureLogger.info('SDK initialized successfully', tag: 'Breez');
     } catch (e, stack) {
-      debugPrint('Failed to initialize Breez SDK: $e');
-      debugPrint('Stack trace: $stack');
+      SecureLogger.error('Failed to initialize SDK', error: e, stackTrace: stack, tag: 'Breez');
       rethrow;
     }
   }

@@ -9,6 +9,7 @@ import 'theme.dart';
 /// to prevent clipboard-based attacks on sensitive data like mnemonics.
 class SecureClipboard {
   static Timer? _clearTimer;
+  static int _copyId = 0; // Track copy operations to prevent race conditions
 
   /// Copy sensitive data with auto-clear and security warning
   ///
@@ -77,15 +78,25 @@ class SecureClipboard {
       if (confirmed != true) return;
     }
 
+    // SECURITY: Cancel any existing timer first to prevent race conditions
+    _clearTimer?.cancel();
+    _clearTimer = null;
+
+    // Increment copy ID to track this specific copy operation
+    _copyId++;
+    final thisCopyId = _copyId;
+
     // Copy to clipboard
     await Clipboard.setData(ClipboardData(text: text));
 
-    // Cancel any existing timer
-    _clearTimer?.cancel();
-
-    // Auto-clear after timeout
+    // Auto-clear after timeout - but only if no new copy has occurred
     _clearTimer = Timer(timeout, () async {
-      await Clipboard.setData(const ClipboardData(text: ''));
+      // Only clear if this is still the most recent copy operation
+      // This prevents race conditions where a new copy's timer gets cleared
+      if (_copyId == thisCopyId) {
+        await Clipboard.setData(const ClipboardData(text: ''));
+        _clearTimer = null;
+      }
     });
 
     // Show countdown snackbar

@@ -47,9 +47,10 @@ class BiometricService {
 
   /// Authenticate user with biometrics
   /// Returns true if authentication successful, false otherwise
+  /// SECURITY: biometricOnly defaults to true to prevent PIN/pattern bypass
   Future<bool> authenticate({
     String reason = 'Authenticate to access your wallet',
-    bool biometricOnly = false,
+    bool biometricOnly = true,
   }) async {
     try {
       // Check if biometrics are available
@@ -62,6 +63,8 @@ class BiometricService {
 
       return await _localAuth.authenticate(
         localizedReason: reason,
+        biometricOnly: biometricOnly,
+        sensitiveTransaction: true,
       );
     } on PlatformException catch (e) {
       // Handle specific errors

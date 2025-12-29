@@ -5,27 +5,29 @@
   SECURITY:
   - Enforces HTTPS for all network connections
   - Disables cleartext (HTTP) traffic
-  - Certificate pinning for Breez API to prevent MITM attacks
+  - Certificate pinning for Breez API using Let's Encrypt chain
 -->
 <network-security-config>
     <!-- Default configuration for all domains -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
-            <!-- Trust system CAs -->
             <certificates src="system" />
         </trust-anchors>
     </base-config>
 
-    <!-- Certificate pinning for Breez API - prevents rogue CA MITM attacks -->
+    <!-- Certificate pinning for Breez API - pins Let's Encrypt CA chain -->
     <domain-config>
         <domain includeSubdomains="true">api.breez.technology</domain>
         <domain includeSubdomains="true">breez.technology</domain>
+        <domain includeSubdomains="true">greenlight.blockstream.com</domain>
         <pin-set expiration="2026-12-31">
-            <!-- Breez API leaf certificate pin -->
-            <pin digest="SHA-256">47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=</pin>
-            <!-- Let's Encrypt ISRG Root X1 (backup) -->
+            <!-- ISRG Root X1 (Let's Encrypt root) - most stable pin -->
             <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
-            <!-- Let's Encrypt R3 intermediate (backup) -->
+            <!-- ISRG Root X2 (backup root) -->
+            <pin digest="SHA-256">diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=</pin>
+            <!-- Let's Encrypt E1 intermediate -->
+            <pin digest="SHA-256">J2/oqMTsdhFWW/n85tys6b4yDBtb6idZayIEBx7QTxA=</pin>
+            <!-- Let's Encrypt R3 intermediate -->
             <pin digest="SHA-256">jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=</pin>
         </pin-set>
         <trust-anchors>
@@ -33,10 +35,7 @@
         </trust-anchors>
     </domain-config>
 
-    <!--
-      Debug configuration - allows localhost for development
-      This is automatically ignored in release builds
-    -->
+    <!-- Debug: allow user certs for proxy debugging -->
     <debug-overrides>
         <trust-anchors>
             <certificates src="system" />
