@@ -25,9 +25,9 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
     _generateMnemonic();
   }
 
-  Future<void> _generateMnemonic() async {
+  void _generateMnemonic() {
     final wallet = context.read<WalletProvider>();
-    final mnemonic = await wallet.generateMnemonic();
+    final mnemonic = wallet.generateMnemonic();
     setState(() {
       _mnemonic = mnemonic;
       _isLoading = false;
@@ -39,19 +39,37 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
 
     setState(() => _isLoading = true);
 
-    // Save mnemonic securely
-    await SecureStorageService.saveMnemonic(_mnemonic!);
+    try {
+      // Save mnemonic securely
+      await SecureStorageService.saveMnemonic(_mnemonic!);
 
-    // Initialize wallet
-    final wallet = context.read<WalletProvider>();
-    await wallet.initializeWallet(mnemonic: _mnemonic);
+      // Initialize wallet
+      final wallet = context.read<WalletProvider>();
+      await wallet.initializeWallet(mnemonic: _mnemonic);
 
-    if (mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-        (route) => false,
-      );
+      // Check if initialization succeeded
+      if (wallet.error != null) {
+        throw Exception(wallet.error);
+      }
+
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to create wallet: $e'),
+            backgroundColor: Bolt21Theme.error,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
@@ -233,6 +251,7 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
                           ),
                   ),
                 ),
+                const SizedBox(height: 32),
               ],
             ),
     );

@@ -167,15 +167,15 @@ class _BalanceCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _BalanceChip(
-                  icon: Icons.link,
-                  label: 'On-chain',
-                  value: formatSatsCompact(wallet.onChainBalanceSats),
+                  icon: Icons.access_time,
+                  label: 'Pending In',
+                  value: formatSatsCompact(wallet.pendingReceiveSats),
                 ),
                 const SizedBox(width: 24),
                 _BalanceChip(
-                  icon: Icons.bolt,
-                  label: 'Lightning',
-                  value: formatSatsCompact(wallet.lightningBalanceSats),
+                  icon: Icons.schedule_send,
+                  label: 'Pending Out',
+                  value: formatSatsCompact(wallet.pendingSendSats),
                 ),
               ],
             ),

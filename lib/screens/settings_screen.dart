@@ -235,7 +235,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _resetWallet(BuildContext context) async {
     final wallet = context.read<WalletProvider>();
-    await wallet.lightningService.stop();
+    await wallet.lightningService.disconnect();
     await SecureStorageService.clearWallet();
 
     if (context.mounted) {
@@ -651,106 +651,48 @@ class _LspConfigSheet extends StatelessWidget {
   }
 }
 
-/// Screen to view and manage channels
-class ChannelsScreen extends StatefulWidget {
+/// Screen explaining Liquid-based swaps
+class ChannelsScreen extends StatelessWidget {
   const ChannelsScreen({super.key});
-
-  @override
-  State<ChannelsScreen> createState() => _ChannelsScreenState();
-}
-
-class _ChannelsScreenState extends State<ChannelsScreen> {
-  List<dynamic>? _channels;
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadChannels();
-  }
-
-  Future<void> _loadChannels() async {
-    final wallet = context.read<WalletProvider>();
-    try {
-      final channels = await wallet.lightningService.listChannels();
-      setState(() {
-        _channels = channels;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Channels'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() => _isLoading = true);
-              _loadChannels();
-            },
-          ),
-        ],
+        title: const Text('Liquidity'),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _channels == null || _channels!.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.electrical_services,
-                          size: 64,
-                          color: Bolt21Theme.textSecondary.withValues(alpha: 0.5),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No Channels Yet',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Channels will be opened automatically when you receive your first Lightning payment via an LSP.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Bolt21Theme.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _channels!.length,
-                  itemBuilder: (context, index) {
-                    final channel = _channels![index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Bolt21Theme.success,
-                          child: Icon(Icons.bolt, color: Colors.white),
-                        ),
-                        title: Text('Channel ${index + 1}'),
-                        subtitle: Text(channel.toString()),
-                      ),
-                    );
-                  },
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.swap_horiz,
+                size: 64,
+                color: Bolt21Theme.orange.withValues(alpha: 0.7),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Liquid-Based Swaps',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
                 ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Bolt21 uses Breez SDK with Liquid Network for instant swaps. '
+                'No traditional Lightning channels are needed.\n\n'
+                'Payments are automatically converted between Lightning and Liquid, '
+                'giving you the best of both worlds.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Bolt21Theme.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

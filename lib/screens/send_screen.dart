@@ -45,16 +45,8 @@ class _SendScreenState extends State<SendScreen> {
 
     if (input.isEmpty) return;
 
-    bool success = false;
-    final lower = input.toLowerCase();
-
-    if (lower.startsWith('lno')) {
-      // BOLT12 offer
-      success = await wallet.payBolt12Offer(input);
-    } else if (lower.startsWith('lnbc') || lower.startsWith('lntb')) {
-      // BOLT11 invoice
-      success = await wallet.payBolt11Invoice(input);
-    }
+    // Breez SDK automatically parses and handles BOLT11, BOLT12, Lightning Addresses, etc.
+    final success = await wallet.sendPayment(input);
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -217,7 +209,7 @@ class _SendScreenState extends State<SendScreen> {
             // Balance info
             Center(
               child: Text(
-                'Available: ${wallet.lightningBalanceSats} sats',
+                'Available: ${wallet.totalBalanceSats} sats',
                 style: const TextStyle(color: Bolt21Theme.textSecondary),
               ),
             ),

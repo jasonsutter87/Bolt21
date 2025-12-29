@@ -1,187 +1,214 @@
 import 'dart:io';
+import 'package:bip39/bip39.dart' as bip39;
 import 'package:flutter/foundation.dart';
-import 'package:ldk_node/ldk_node.dart';
+import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// LSP configuration for automatic channel liquidity
-class LspConfig {
-  final String nodeId;
-  final String address;
-  final int port;
-  final String? token;
-
-  const LspConfig({
-    required this.nodeId,
-    required this.address,
-    required this.port,
-    this.token,
-  });
-
-  /// Voltage Flow LSP (mainnet) - requires token from voltage.cloud
-  static LspConfig? voltage(String token) => LspConfig(
-        nodeId: '025804d4431ad05b06a1a1ee41f22f3c095c2a4e48e9cfe90ee9c2823c0301c396',
-        address: 'lsp.voltage.cloud',
-        port: 9735,
-        token: token,
-      );
-}
-
-/// Service for managing LDK Lightning node operations
+/// Service for managing Lightning node operations via Breez SDK Liquid
 class LightningService {
-  Node? _node;
+  BreezSdkLiquid? _sdk;
   bool _isInitialized = false;
 
-  bool get isInitialized => _isInitialized;
-  Node? get node => _node;
+  // Breez API key for SDK access
+  static const String _breezApiKey = 'MIIBczCCASWgAwIBAgIHPsaA9tr6ETAFBgMrZXAwEDEOMAwGA1UEAxMFQnJlZXowHhcNMjUxMjI5MDEwOTM1WhcNMzUxMjI3MDEwOTM1WjAoMQ8wDQYDVQQKEwZCb2x0MjExFTATBgNVBAMTDGphc29uIHN1dHRlcjAqMAUGAytlcAMhANCD9cvfIDwcoiDKKYdT9BunHLS2/OuKzV8NS0SzqV13o4GFMIGCMA4GA1UdDwEB/wQEAwIFoDAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTaOaPuXmtLDTJVv++VYBiQr9gHCTAfBgNVHSMEGDAWgBTeqtaSVvON53SSFvxMtiCyayiYazAiBgNVHREEGzAZgRdqYXNvbnN1dHRlcjg3QGdtYWlsLmNvbTAFBgMrZXADQQBw92fM69Zv2nU2mNPhRlryWYts8BF2hcreKaeb1aq2ET4wg1H4fLl9LcfK03U9AqehikIVx/fZAMwH4AnpcHkM';
 
-  /// Initialize the Lightning node
-  Future<void> initialize({
-    String? mnemonic,
-    LspConfig? lspConfig,
-  }) async {
+  bool get isInitialized => _isInitialized;
+  BreezSdkLiquid? get sdk => _sdk;
+
+  /// Initialize the Breez SDK
+  Future<void> initialize({String? mnemonic}) async {
     if (_isInitialized) return;
 
     try {
+      debugPrint('Breez: Getting app directory...');
       final directory = await getApplicationDocumentsDirectory();
-      final ldkDir = '${directory.path}/ldk_node';
+      final workingDir = '${directory.path}/breez_sdk';
 
       // Ensure directory exists
-      await Directory(ldkDir).create(recursive: true);
+      await Directory(workingDir).create(recursive: true);
+      debugPrint('Breez: Directory ready: $workingDir');
 
-      // Build the node
-      final builder = Builder()
-        ..setNetwork(Network.bitcoin)
-        ..setStorageDirPath(ldkDir)
-        ..setEsploraServer('https://blockstream.info/api');
+      // Generate mnemonic if not provided
+      final seedPhrase = mnemonic ?? generateMnemonic();
 
-      // Set mnemonic if provided, otherwise generate new one
-      if (mnemonic != null) {
-        builder.setEntropyBip39Mnemonic(
-            mnemonic: Mnemonic(seedPhrase: mnemonic));
-      }
+      debugPrint('Breez: Creating config...');
+      // Get default config and update the working directory
+      final defaultCfg = defaultConfig(
+        network: LiquidNetwork.mainnet,
+        breezApiKey: _breezApiKey,
+      );
 
-      // Configure LSP for automatic inbound liquidity
-      if (lspConfig != null) {
-        builder.setLiquiditySourceLsps2(
-          address: SocketAddress.hostname(
-            addr: lspConfig.address,
-            port: lspConfig.port,
-          ),
-          publicKey: PublicKey(hex: lspConfig.nodeId),
-          token: lspConfig.token,
-        );
-        debugPrint('LSP configured: ${lspConfig.address}:${lspConfig.port}');
-      }
+      final config = Config(
+        liquidExplorer: defaultCfg.liquidExplorer,
+        bitcoinExplorer: defaultCfg.bitcoinExplorer,
+        workingDir: workingDir,
+        network: defaultCfg.network,
+        paymentTimeoutSec: defaultCfg.paymentTimeoutSec,
+        syncServiceUrl: defaultCfg.syncServiceUrl,
+        zeroConfMaxAmountSat: defaultCfg.zeroConfMaxAmountSat,
+        breezApiKey: defaultCfg.breezApiKey,
+        externalInputParsers: defaultCfg.externalInputParsers,
+        useDefaultExternalInputParsers: defaultCfg.useDefaultExternalInputParsers,
+        onchainFeeRateLeewaySat: defaultCfg.onchainFeeRateLeewaySat,
+        assetMetadata: defaultCfg.assetMetadata,
+        sideswapApiKey: defaultCfg.sideswapApiKey,
+        useMagicRoutingHints: defaultCfg.useMagicRoutingHints,
+        onchainSyncPeriodSec: defaultCfg.onchainSyncPeriodSec,
+        onchainSyncRequestTimeoutSec: defaultCfg.onchainSyncRequestTimeoutSec,
+      );
 
-      _node = await builder.build();
-      await _node!.start();
+      debugPrint('Breez: Connecting...');
+      final connectRequest = ConnectRequest(
+        mnemonic: seedPhrase,
+        config: config,
+      );
+
+      _sdk = await connect(req: connectRequest);
       _isInitialized = true;
 
-      debugPrint('Lightning node initialized successfully');
-    } catch (e) {
-      debugPrint('Failed to initialize Lightning node: $e');
+      debugPrint('Breez SDK initialized successfully');
+    } catch (e, stack) {
+      debugPrint('Failed to initialize Breez SDK: $e');
+      debugPrint('Stack trace: $stack');
       rethrow;
     }
   }
 
-  /// Generate a new mnemonic seed phrase
-  Future<String> generateMnemonic() async {
-    final mnemonic = await Mnemonic.generate();
-    return mnemonic.seedPhrase;
+  /// Generate a new mnemonic seed phrase (12 words)
+  String generateMnemonic() {
+    return bip39.generateMnemonic(strength: 128); // 128 bits = 12 words
   }
 
-  /// Get on-chain wallet address
-  Future<String> getOnChainAddress() async {
+  /// Get wallet info including balance
+  Future<GetInfoResponse> getInfo() async {
     _ensureInitialized();
-    final onChainPayment = await _node!.onChainPayment();
-    final address = await onChainPayment.newAddress();
-    return address.s;
+    return await _sdk!.getInfo();
   }
 
-  /// Get wallet balances
-  Future<BalanceDetails> getBalances() async {
-    _ensureInitialized();
-    return await _node!.listBalances();
-  }
-
-  /// Sync wallets with the blockchain
-  Future<void> syncWallets() async {
-    _ensureInitialized();
-    await _node!.syncWallets();
+  /// Get wallet balance in sats
+  Future<BigInt> getBalanceSat() async {
+    final info = await getInfo();
+    return info.walletInfo.balanceSat;
   }
 
   /// Generate a BOLT12 offer (reusable payment address)
-  Future<String> generateBolt12Offer({String? description}) async {
+  Future<String> generateBolt12Offer() async {
     _ensureInitialized();
-    final bolt12Payment = await _node!.bolt12Payment();
-    final offer = await bolt12Payment.receiveVariableAmount(
-      description: description ?? 'Bolt21 Wallet',
+
+    final prepareRequest = PrepareReceiveRequest(
+      paymentMethod: PaymentMethod.bolt12Offer,
     );
-    return offer.s;
+
+    final prepareResponse = await _sdk!.prepareReceivePayment(
+      req: prepareRequest,
+    );
+
+    final receiveRequest = ReceivePaymentRequest(
+      prepareResponse: prepareResponse,
+    );
+
+    final response = await _sdk!.receivePayment(req: receiveRequest);
+    return response.destination;
   }
 
-  /// Pay a BOLT12 offer
-  Future<PaymentId> payBolt12Offer({
-    required String offer,
-    BigInt? amountMsat,
+  /// Generate a BOLT11 invoice
+  Future<String> generateBolt11Invoice({
+    required BigInt amountSat,
+    String? description,
   }) async {
     _ensureInitialized();
-    final bolt12Payment = await _node!.bolt12Payment();
 
-    if (amountMsat != null) {
-      return await bolt12Payment.sendUsingAmount(
-        offer: Offer(s: offer),
-        payerNote: 'Sent via Bolt21',
-        amountMsat: amountMsat,
-      );
-    } else {
-      return await bolt12Payment.send(
-        offer: Offer(s: offer),
-        payerNote: 'Sent via Bolt21',
-      );
-    }
+    final prepareRequest = PrepareReceiveRequest(
+      paymentMethod: PaymentMethod.lightning,
+      amount: ReceiveAmount.bitcoin(payerAmountSat: amountSat),
+    );
+
+    final prepareResponse = await _sdk!.prepareReceivePayment(
+      req: prepareRequest,
+    );
+
+    final receiveRequest = ReceivePaymentRequest(
+      prepareResponse: prepareResponse,
+      description: description,
+    );
+
+    final response = await _sdk!.receivePayment(req: receiveRequest);
+    return response.destination;
   }
 
-  /// Pay a BOLT11 invoice (for compatibility)
-  Future<PaymentId> payBolt11Invoice(String invoice) async {
+  /// Get on-chain Bitcoin address (Liquid address for receiving)
+  Future<String> getOnChainAddress() async {
     _ensureInitialized();
-    final bolt11Payment = await _node!.bolt11Payment();
-    final paymentId = await bolt11Payment.send(
-      invoice: Bolt11Invoice(signedRawInvoice: invoice),
+
+    final prepareRequest = PrepareReceiveRequest(
+      paymentMethod: PaymentMethod.bitcoinAddress,
     );
-    return paymentId;
+
+    final prepareResponse = await _sdk!.prepareReceivePayment(
+      req: prepareRequest,
+    );
+
+    final receiveRequest = ReceivePaymentRequest(
+      prepareResponse: prepareResponse,
+    );
+
+    final response = await _sdk!.receivePayment(req: receiveRequest);
+    return response.destination;
+  }
+
+  /// Parse any payment input (BOLT11, BOLT12, BIP21, Lightning Address, etc.)
+  Future<InputType> parseInput(String input) async {
+    _ensureInitialized();
+    return await _sdk!.parse(input: input);
+  }
+
+  /// Send a payment (works with BOLT11, BOLT12, Lightning Address, etc.)
+  Future<SendPaymentResponse> sendPayment({
+    required String destination,
+    BigInt? amountSat,
+  }) async {
+    _ensureInitialized();
+
+    final prepareRequest = PrepareSendRequest(
+      destination: destination,
+      amount: amountSat != null
+          ? PayAmount.bitcoin(receiverAmountSat: amountSat)
+          : null,
+    );
+
+    final prepareResponse = await _sdk!.prepareSendPayment(req: prepareRequest);
+
+    final sendRequest = SendPaymentRequest(
+      prepareResponse: prepareResponse,
+    );
+
+    return await _sdk!.sendPayment(req: sendRequest);
   }
 
   /// List all payments
-  Future<List<PaymentDetails>> listPayments() async {
+  Future<List<Payment>> listPayments() async {
     _ensureInitialized();
-    return await _node!.listPayments();
+    final request = ListPaymentsRequest();
+    return await _sdk!.listPayments(req: request);
   }
 
-  /// List all channels
-  Future<List<ChannelDetails>> listChannels() async {
+  /// Listen to payment events
+  Stream<SdkEvent> get paymentEvents {
     _ensureInitialized();
-    return await _node!.listChannels();
+    return _sdk!.addEventListener();
   }
 
-  /// Get node ID
-  Future<String> getNodeId() async {
-    _ensureInitialized();
-    final nodeId = await _node!.nodeId();
-    return nodeId.hex;
-  }
-
-  /// Stop the node
-  Future<void> stop() async {
-    if (_node != null) {
-      await _node!.stop();
+  /// Disconnect the SDK
+  Future<void> disconnect() async {
+    if (_sdk != null) {
+      await _sdk!.disconnect();
       _isInitialized = false;
     }
   }
 
   void _ensureInitialized() {
-    if (!_isInitialized || _node == null) {
-      throw Exception('Lightning node not initialized');
+    if (!_isInitialized || _sdk == null) {
+      throw Exception('Breez SDK not initialized');
     }
   }
 }

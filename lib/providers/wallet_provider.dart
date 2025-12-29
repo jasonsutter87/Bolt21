@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:ldk_node/ldk_node.dart';
+import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import '../services/lightning_service.dart';
 
 /// Wallet state management
@@ -10,37 +10,36 @@ class WalletProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isInitialized = false;
   String? _error;
-  String? _nodeId;
   String? _onChainAddress;
   String? _bolt12Offer;
-  BalanceDetails? _balances;
-  List<PaymentDetails> _payments = [];
+  GetInfoResponse? _info;
+  List<Payment> _payments = [];
 
   // Getters
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
   String? get error => _error;
-  String? get nodeId => _nodeId;
   String? get onChainAddress => _onChainAddress;
   String? get bolt12Offer => _bolt12Offer;
-  BalanceDetails? get balances => _balances;
-  List<PaymentDetails> get payments => _payments;
+  GetInfoResponse? get info => _info;
+  List<Payment> get payments => _payments;
   LightningService get lightningService => _lightningService;
 
   // Derived getters
   int get totalBalanceSats {
-    if (_balances == null) return 0;
-    final onChain = _balances!.totalOnchainBalanceSats.toInt();
-    final lightning = _balances!.totalLightningBalanceSats.toInt();
-    return onChain + lightning;
+    return _info?.walletInfo.balanceSat.toInt() ?? 0;
   }
 
-  int get onChainBalanceSats {
-    return _balances?.totalOnchainBalanceSats.toInt() ?? 0;
+  int get pendingReceiveSats {
+    return _info?.walletInfo.pendingReceiveSat.toInt() ?? 0;
   }
 
-  int get lightningBalanceSats {
-    return _balances?.totalLightningBalanceSats.toInt() ?? 0;
+  int get pendingSendSats {
+    return _info?.walletInfo.pendingSendSat.toInt() ?? 0;
+  }
+
+  String? get nodeId {
+    return _info?.walletInfo.pubkey;
   }
 
   /// Initialize wallet with existing or new mnemonic
@@ -61,8 +60,8 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Generate a new mnemonic
-  Future<String> generateMnemonic() async {
-    return await _lightningService.generateMnemonic();
+  String generateMnemonic() {
+    return _lightningService.generateMnemonic();
   }
 
   /// Refresh all wallet data
@@ -75,8 +74,7 @@ class WalletProvider extends ChangeNotifier {
 
   Future<void> _refreshAll() async {
     try {
-      _nodeId = await _lightningService.getNodeId();
-      _balances = await _lightningService.getBalances();
+      _info = await _lightningService.getInfo();
       _payments = await _lightningService.listPayments();
       _error = null;
     } catch (e) {
@@ -99,13 +97,11 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Generate BOLT12 offer
-  Future<void> generateBolt12Offer({String? description}) async {
+  Future<void> generateBolt12Offer() async {
     if (!_isInitialized) return;
 
     try {
-      _bolt12Offer = await _lightningService.generateBolt12Offer(
-        description: description,
-      );
+      _bolt12Offer = await _lightningService.generateBolt12Offer();
       notifyListeners();
     } catch (e) {
       _error = e.toString();
@@ -113,34 +109,16 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  /// Pay a BOLT12 offer
-  Future<bool> payBolt12Offer(String offer, {BigInt? amountMsat}) async {
+  /// Send a payment (BOLT11, BOLT12, Lightning Address, etc.)
+  Future<bool> sendPayment(String destination, {BigInt? amountSat}) async {
     if (!_isInitialized) return false;
     _setLoading(true);
 
     try {
-      await _lightningService.payBolt12Offer(
-        offer: offer,
-        amountMsat: amountMsat,
+      await _lightningService.sendPayment(
+        destination: destination,
+        amountSat: amountSat,
       );
-      await _refreshAll();
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Pay a BOLT11 invoice
-  Future<bool> payBolt11Invoice(String invoice) async {
-    if (!_isInitialized) return false;
-    _setLoading(true);
-
-    try {
-      await _lightningService.payBolt11Invoice(invoice);
       await _refreshAll();
       return true;
     } catch (e) {
@@ -159,7 +137,7 @@ class WalletProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _lightningService.stop();
+    _lightningService.disconnect();
     super.dispose();
   }
 }

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart' show ShareParams, SharePlus;
+import 'package:share_plus/share_plus.dart' show SharePlus, ShareParams;
 import '../providers/wallet_provider.dart';
 import '../utils/theme.dart';
 
@@ -57,14 +57,28 @@ class _ReceiveScreenState extends State<ReceiveScreen>
 }
 
 /// BOLT12 Offer tab - reusable Lightning address
-class _Bolt12Tab extends StatelessWidget {
+class _Bolt12Tab extends StatefulWidget {
   const _Bolt12Tab();
+
+  @override
+  State<_Bolt12Tab> createState() => _Bolt12TabState();
+}
+
+class _Bolt12TabState extends State<_Bolt12Tab> {
+  final _noteController = TextEditingController();
+  String? _savedNote;
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<WalletProvider>(
       builder: (context, wallet, child) {
-        return Padding(
+        return SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
@@ -84,30 +98,89 @@ class _Bolt12Tab extends StatelessWidget {
                 style: TextStyle(color: Bolt21Theme.textSecondary),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
 
               if (wallet.bolt12Offer == null) ...[
-                ElevatedButton(
-                  onPressed: wallet.isLoading
-                      ? null
-                      : () => wallet.generateBolt12Offer(),
-                  child: wallet.isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Generate Offer'),
+                // Note input field
+                TextField(
+                  controller: _noteController,
+                  decoration: InputDecoration(
+                    labelText: 'Note (optional)',
+                    hintText: 'e.g., Ocean Mining Payout',
+                    hintStyle: TextStyle(
+                      color: Bolt21Theme.textSecondary.withValues(alpha: 0.5),
+                    ),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.note_alt_outlined),
+                  ),
+                  maxLength: 100,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: wallet.isLoading
+                        ? null
+                        : () {
+                            setState(() {
+                              _savedNote = _noteController.text.isNotEmpty
+                                  ? _noteController.text
+                                  : null;
+                            });
+                            wallet.generateBolt12Offer();
+                          },
+                    child: wallet.isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Generate Offer'),
+                  ),
                 ),
               ] else ...[
-                Expanded(
-                  child: _QrCard(
-                    data: wallet.bolt12Offer!,
-                    label: 'Scan to pay',
+                // Show note if provided
+                if (_savedNote != null && _savedNote!.isNotEmpty) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Bolt21Theme.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Bolt21Theme.orange.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.note_alt,
+                          color: Bolt21Theme.orange,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _savedNote!,
+                            style: const TextStyle(
+                              color: Bolt21Theme.orange,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(height: 16),
+                ],
+                _QrCard(
+                  data: wallet.bolt12Offer!,
+                  label: 'Scan to pay',
                 ),
                 const SizedBox(height: 16),
                 _ActionButtons(data: wallet.bolt12Offer!),
+                const SizedBox(height: 32),
               ],
             ],
           ),

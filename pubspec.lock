@@ -17,6 +17,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.0"
+  bip39:
+    dependency: "direct main"
+    description:
+      name: bip39
+      sha256: de1ee27ebe7d96b84bb3a04a4132a0a3007dcdd5ad27dd14aa87a29d97c45edc
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.6"
   boolean_selector:
     dependency: transitive
     description:
@@ -57,6 +65,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.19.1"
+  convert:
+    dependency: transitive
+    description:
+      name: convert
+      sha256: b30acd5944035672bc15c6b7a8b47d773e41e2f17de064350988c5d02adb1c68
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.2"
   cross_file:
     dependency: transitive
     description:
@@ -118,6 +134,15 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_breez_liquid:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: main
+      resolved-ref: d3e0bf44404bbadcd69be1aaf56a8389a83eb6e6
+      url: "https://github.com/breez/breez-sdk-liquid-flutter"
+    source: git
+    version: "0.11.11"
   flutter_lints:
     dependency: "direct dev"
     description:
@@ -138,10 +163,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_rust_bridge
-      sha256: "37ef40bc6f863652e865f0b2563ea07f0d3c58d8efad803cc01933a4b2ee067e"
+      sha256: "5a5c7a5deeef2cc2ffe6076a33b0429f4a20ceac22a397297aed2b1eb067e611"
       url: "https://pub.dev"
     source: hosted
-    version: "2.11.1"
+    version: "2.9.0"
   flutter_secure_storage:
     dependency: "direct main"
     description:
@@ -204,10 +229,10 @@ packages:
     dependency: transitive
     description:
       name: freezed_annotation
-      sha256: c2e2d632dd9b8a2b7751117abcfc2b4888ecfe181bd9fca7170d9ef02e595fe2
+      sha256: "7294967ff0a6d98638e7acb774aac3af2550777accd8149c90af5b014e6d44d8"
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.4"
+    version: "3.1.0"
   go_router:
     dependency: "direct main"
     description:
@@ -216,6 +241,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "17.0.1"
+  hex:
+    dependency: transitive
+    description:
+      name: hex
+      sha256: "4e7cd54e4b59ba026432a6be2dd9d96e4c5205725194997193bf871703b82c4a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0"
   intl:
     dependency: transitive
     description:
@@ -224,6 +257,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.20.2"
+  js:
+    dependency: transitive
+    description:
+      name: js
+      sha256: "53385261521cc4a0c4658fd0ad07a7d14591cf8fc33abbceae306ddb974888dc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.7.2"
   json_annotation:
     dependency: transitive
     description:
@@ -232,14 +273,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.9.0"
-  ldk_node:
-    dependency: "direct main"
-    description:
-      name: ldk_node
-      sha256: b76e3af10830e1adbbc97a1c9482db2b722c0dccae47cad1f70975c9d413dc8a
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.0"
   leak_tracker:
     dependency: transitive
     description:
@@ -348,10 +381,10 @@ packages:
     dependency: transitive
     description:
       name: mime
-      sha256: "41a20518f0cb1256669420fdba0cd90d21561e560ac240f26ef8322e45bb7ed6"
+      sha256: "801fd0b26f14a4a58ccb09d5892c3fbdeff209594300a542492cf13fba9d247a"
       url: "https://pub.dev"
     source: hosted
-    version: "2.0.0"
+    version: "1.0.6"
   mobile_scanner:
     dependency: "direct main"
     description:
@@ -440,6 +473,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.8"
+  pointycastle:
+    dependency: transitive
+    description:
+      name: pointycastle
+      sha256: "4be0097fcf3fd3e8449e53730c631200ebc7b88016acecab2b0da2f0149222fe"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.9.1"
   provider:
     dependency: "direct main"
     description:

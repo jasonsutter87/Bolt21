@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:provider/provider.dart';
 import 'providers/wallet_provider.dart';
 import 'services/auth_service.dart';
@@ -8,8 +9,12 @@ import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
 import 'screens/welcome_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize the Breez SDK Rust library
+  await FlutterBreezLiquid.init();
+
   runApp(const Bolt21App());
 }
 
