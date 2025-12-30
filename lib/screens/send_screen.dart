@@ -3,6 +3,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
 import '../services/auth_service.dart';
+import '../utils/address_validator.dart';
 import '../utils/theme.dart';
 
 /// Threshold in sats above which biometric re-authentication is required
@@ -49,6 +50,18 @@ class _SendScreenState extends State<SendScreen> {
     final input = _controller.text.trim();
 
     if (input.isEmpty) return;
+
+    // SECURITY: Validate address to prevent unicode lookalike attacks
+    final validationError = AddressValidator.validateDestination(input);
+    if (validationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(validationError),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+      return;
+    }
 
     // Parse amount if provided (for BOLT12 offers)
     BigInt? amountSat;
@@ -132,6 +145,7 @@ class _SendScreenState extends State<SendScreen> {
   }
 
   /// Validate and sanitize QR code content to prevent injection attacks
+  /// SECURITY: Uses AddressValidator to prevent unicode lookalike attacks
   String? _validateQrCode(String? rawValue) {
     if (rawValue == null || rawValue.isEmpty) return null;
 
@@ -147,24 +161,26 @@ class _SendScreenState extends State<SendScreen> {
       return null;
     }
 
+    // SECURITY: Check for unicode lookalikes before any processing
+    if (AddressValidator.containsUnicodeLookalikes(rawValue)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('QR code contains invalid unicode characters. Possible spoofing attempt.'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+      return null;
+    }
+
     // Basic sanitization - remove control characters except newlines
     final sanitized = rawValue.replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '');
 
-    // Validate it looks like a valid payment destination
-    final lower = sanitized.toLowerCase().trim();
-    final isValidPrefix = lower.startsWith('lno') ||      // BOLT12 offer
-        lower.startsWith('lnbc') ||                        // BOLT11 mainnet
-        lower.startsWith('lntb') ||                        // BOLT11 testnet
-        lower.startsWith('bitcoin:') ||                    // BIP21 URI
-        lower.startsWith('bc1') ||                         // Bech32 address
-        lower.startsWith('1') ||                           // Legacy P2PKH
-        lower.startsWith('3') ||                           // P2SH address
-        lower.contains('@');                               // Lightning address
-
-    if (!isValidPrefix) {
+    // SECURITY: Full validation using AddressValidator
+    final validationError = AddressValidator.validateDestination(sanitized.trim());
+    if (validationError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid QR code. Not a valid payment destination.'),
+        SnackBar(
+          content: Text(validationError),
           backgroundColor: Bolt21Theme.error,
         ),
       );

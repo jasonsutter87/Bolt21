@@ -157,16 +157,23 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Create a new wallet with generated mnemonic
+  /// SECURITY: Sanitizes wallet name to prevent injection attacks
   Future<WalletMetadata> createWallet({required String name}) async {
     _setLoading(true);
     _error = null;
 
     try {
+      // SECURITY: Sanitize wallet name
+      final sanitizedName = _sanitizeWalletName(name);
+      if (sanitizedName.isEmpty) {
+        throw Exception('Wallet name cannot be empty');
+      }
+
       // Generate new mnemonic
       final mnemonic = _lightningService.generateMnemonic();
 
       // Create wallet metadata
-      final wallet = WalletMetadata.create(name: name);
+      final wallet = WalletMetadata.create(name: sanitizedName);
 
       // Save mnemonic
       await SecureStorageService.saveMnemonic(mnemonic, walletId: wallet.id);
@@ -190,6 +197,7 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Import a wallet with provided mnemonic
+  /// SECURITY: Sanitizes wallet name to prevent injection attacks
   Future<WalletMetadata> importWallet({
     required String name,
     required String mnemonic,
@@ -198,8 +206,14 @@ class WalletProvider extends ChangeNotifier {
     _error = null;
 
     try {
+      // SECURITY: Sanitize wallet name
+      final sanitizedName = _sanitizeWalletName(name);
+      if (sanitizedName.isEmpty) {
+        throw Exception('Wallet name cannot be empty');
+      }
+
       // Create wallet metadata
-      final wallet = WalletMetadata.create(name: name);
+      final wallet = WalletMetadata.create(name: sanitizedName);
 
       // Save mnemonic
       await SecureStorageService.saveMnemonic(mnemonic, walletId: wallet.id);
@@ -263,22 +277,33 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
+  /// Sanitize wallet name to prevent injection attacks
+  /// SECURITY: Removes control characters and validates content
+  String _sanitizeWalletName(String name) {
+    // Remove control characters and null bytes
+    var sanitized = name.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+    // Remove HTML/script tags
+    sanitized = sanitized.replaceAll(RegExp(r'<[^>]*>'), '');
+    // Trim whitespace
+    return sanitized.trim();
+  }
+
   /// Rename a wallet
-  /// SECURITY: Validates input to prevent empty names and excessive length
+  /// SECURITY: Validates and sanitizes input to prevent injection attacks
   Future<void> renameWallet(String walletId, String newName) async {
-    // Input validation
-    final trimmedName = newName.trim();
-    if (trimmedName.isEmpty) {
+    // Input validation and sanitization
+    final sanitizedName = _sanitizeWalletName(newName);
+    if (sanitizedName.isEmpty) {
       throw Exception('Wallet name cannot be empty');
     }
-    if (trimmedName.length > 50) {
+    if (sanitizedName.length > 50) {
       throw Exception('Wallet name cannot exceed 50 characters');
     }
 
     final index = _wallets.indexWhere((w) => w.id == walletId);
     if (index == -1) throw Exception('Wallet not found');
 
-    _wallets[index] = _wallets[index].copyWith(name: trimmedName);
+    _wallets[index] = _wallets[index].copyWith(name: sanitizedName);
     await SecureStorageService.saveWalletList(_wallets);
 
     // Update active wallet reference if needed
@@ -480,21 +505,29 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  /// SECURITY: Check if payment is rate limited
-  /// Returns true if too many attempts in the last minute
-  bool _isRateLimited() {
-    final now = DateTime.now();
-    final oneMinuteAgo = now.subtract(const Duration(minutes: 1));
+  // SECURITY: Mutex lock for rate limiting to prevent TOCTOU race condition
+  final Lock _rateLimitLock = Lock();
 
-    // Remove attempts older than 1 minute
-    _paymentAttempts.removeWhere((attempt) => attempt.isBefore(oneMinuteAgo));
+  /// SECURITY: Atomically check and record payment attempt for rate limiting
+  /// Returns true if rate limited (too many attempts), false if allowed
+  /// Uses mutex lock to prevent race condition between check and record
+  Future<bool> _checkAndRecordPaymentAttempt() async {
+    return await _rateLimitLock.synchronized(() {
+      final now = DateTime.now();
+      final oneMinuteAgo = now.subtract(const Duration(minutes: 1));
 
-    return _paymentAttempts.length >= _maxPaymentAttemptsPerMinute;
-  }
+      // Remove attempts older than 1 minute
+      _paymentAttempts.removeWhere((attempt) => attempt.isBefore(oneMinuteAgo));
 
-  /// SECURITY: Record a payment attempt for rate limiting
-  void _recordPaymentAttempt() {
-    _paymentAttempts.add(DateTime.now());
+      // Check if rate limited
+      if (_paymentAttempts.length >= _maxPaymentAttemptsPerMinute) {
+        return true; // Rate limited
+      }
+
+      // Record this attempt atomically with the check
+      _paymentAttempts.add(now);
+      return false; // Allowed
+    });
   }
 
   /// Send a payment (BOLT11, BOLT12, Lightning Address, etc.)
@@ -502,14 +535,15 @@ class WalletProvider extends ChangeNotifier {
   Future<String?> sendPayment(String destination, {BigInt? amountSat}) async {
     if (!_isInitialized || _activeWallet == null) return null;
 
-    // SECURITY: Rate limiting - prevent rapid payment attempts (DoS/drain attacks)
-    if (_isRateLimited()) {
+    // SECURITY: Atomic rate limiting - prevents TOCTOU race condition
+    // Check and record in single locked operation to prevent bypass
+    final isRateLimited = await _checkAndRecordPaymentAttempt();
+    if (isRateLimited) {
       _error = 'Too many payment attempts. Please wait a moment before trying again.';
       SecureLogger.warn('Payment rate limited', tag: 'Payment');
       notifyListeners();
       return null;
     }
-    _recordPaymentAttempt();
 
     // SECURITY: Validate balance before attempting send
     // Reserve a buffer for fees to avoid failed transactions
@@ -592,14 +626,17 @@ class WalletProvider extends ChangeNotifier {
 
     // Atomic lock acquisition - prevents race condition
     return await _sendLock.synchronized(() async {
-      // Double-check inside lock (belt and suspenders)
+      // SECURITY: Double-check inside lock with wallet isolation
+      // Must filter by walletId to prevent cross-wallet operation confusion
+      final activeWalletId = _activeWallet?.id;
       final existing = _operationStateService.getAllOperations().where((op) =>
+          op.walletId == activeWalletId &&
           op.destination == destination &&
           op.amountSat == amountSat?.toInt() &&
           op.isIncomplete);
 
       if (existing.isNotEmpty) {
-        SecureLogger.warn('Duplicate payment blocked', tag: 'Wallet');
+        SecureLogger.warn('Duplicate payment blocked for wallet $activeWalletId', tag: 'Wallet');
         _error = 'A payment to this destination is already in progress';
         notifyListeners();
         return null;

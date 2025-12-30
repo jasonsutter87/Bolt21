@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import '../providers/wallet_provider.dart';
+import '../utils/secure_string.dart';
 import '../utils/theme.dart';
 import 'home_screen.dart';
 
@@ -101,17 +102,21 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
       _syncStep = 1;
     });
 
+    // SECURITY: Use SecureString to minimize mnemonic exposure in memory
+    SecureString? secureMnemonic;
+
     try {
-      final mnemonic = _mnemonic;
+      // SECURITY: Immediately wrap mnemonic in SecureString for secure disposal
+      secureMnemonic = SecureString.fromString(_mnemonic);
 
       // Validate mnemonic format (word count)
-      final words = mnemonic.split(' ');
+      final words = secureMnemonic.value.split(' ');
       if (words.length != 12) {
         throw Exception('Recovery phrase must be exactly 12 words');
       }
 
       // Validate BIP39 mnemonic checksum and word list
-      if (!bip39.validateMnemonic(mnemonic)) {
+      if (!bip39.validateMnemonic(secureMnemonic.value)) {
         throw Exception(
           'Invalid recovery phrase. Please check that all words are spelled correctly '
           'and are valid BIP39 words.'
@@ -130,7 +135,12 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
       _updateSyncStatus('Connecting to Lightning network...', 3);
 
       // Import wallet with the new multi-wallet API
-      await wallet.importWallet(name: name, mnemonic: mnemonic);
+      // Note: importWallet internally stores to secure storage
+      await wallet.importWallet(name: name, mnemonic: secureMnemonic.value);
+
+      // SECURITY: Immediately dispose SecureString after use
+      secureMnemonic.dispose();
+      secureMnemonic = null;
 
       if (wallet.error != null) {
         setState(() {
@@ -178,6 +188,9 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
         _syncStatus = '';
         _syncStep = 0;
       });
+    } finally {
+      // SECURITY: Always dispose SecureString to wipe mnemonic from memory
+      secureMnemonic?.dispose();
     }
   }
 
