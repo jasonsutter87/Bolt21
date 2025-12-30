@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:mocktail/mocktail.dart';
 import 'package:bolt21/services/lightning_service.dart';
 import 'package:bolt21/services/operation_state_service.dart';
@@ -55,9 +54,12 @@ void setUpMockLightningService(MockLightningService mock, {
   String? onChainAddress,
 }) {
   when(() => mock.isInitialized).thenReturn(isInitialized);
+  when(() => mock.currentWalletId).thenReturn('test-wallet-id');
 
-  when(() => mock.initialize(mnemonic: any(named: 'mnemonic')))
-      .thenAnswer((_) async {});
+  when(() => mock.initialize(
+    walletId: any(named: 'walletId'),
+    mnemonic: any(named: 'mnemonic'),
+  )).thenAnswer((_) async {});
 
   when(() => mock.generateBolt12Offer())
       .thenAnswer((_) async => bolt12Offer ?? 'lno1test...');

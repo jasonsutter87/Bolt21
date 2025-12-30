@@ -4,6 +4,7 @@ import '../providers/wallet_provider.dart';
 import '../services/operation_state_service.dart';
 import '../utils/formatters.dart';
 import '../utils/theme.dart';
+import '../widgets/wallet_switcher.dart';
 import 'receive_screen.dart';
 import 'send_screen.dart';
 import 'settings_screen.dart';
@@ -20,6 +21,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const Padding(
+          padding: EdgeInsets.only(left: 8),
+          child: Center(child: WalletSwitcher()),
+        ),
+        leadingWidth: 160,
         title: Image.asset(
           'assets/images/logo.png',
           height: 32,

@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import '../providers/wallet_provider.dart';
-import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
 import 'home_screen.dart';
 
 class RestoreWalletScreen extends StatefulWidget {
-  const RestoreWalletScreen({super.key});
+  /// If true, this is adding a wallet to existing wallets (not first wallet)
+  final bool addWallet;
+
+  const RestoreWalletScreen({super.key, this.addWallet = false});
 
   @override
   State<RestoreWalletScreen> createState() => _RestoreWalletScreenState();
@@ -17,11 +19,26 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
   final List<TextEditingController> _controllers =
       List.generate(12, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(12, (_) => FocusNode());
+  final _nameController = TextEditingController();
   bool _isLoading = false;
   String? _error;
   String _syncStatus = '';
   int _syncStep = 0;
   static const int _totalSyncSteps = 4;
+  int _step = 0; // 0 = name, 1 = seed phrase
+
+  @override
+  void initState() {
+    super.initState();
+    final wallet = context.read<WalletProvider>();
+    _nameController.text = 'Wallet ${wallet.wallets.length + 1}';
+
+    // If this is the first wallet, skip name step
+    if (!widget.addWallet && wallet.wallets.isEmpty) {
+      _nameController.text = 'Main Wallet';
+      _step = 1;
+    }
+  }
 
   @override
   void dispose() {
@@ -33,6 +50,7 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
     for (final node in _focusNodes) {
       node.dispose();
     }
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -58,6 +76,19 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
         _syncStep = step;
       });
     }
+  }
+
+  void _proceedToSeedPhrase() {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a wallet name'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+      return;
+    }
+    setState(() => _step = 1);
   }
 
   Future<void> _restoreWallet() async {
@@ -87,19 +118,21 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
         );
       }
 
-      _updateSyncStatus('Saving recovery phrase...', 2);
-      await SecureStorageService.saveMnemonic(mnemonic);
+      _updateSyncStatus('Importing wallet...', 2);
 
-      // SECURITY: Clear mnemonic from UI after secure storage
+      // SECURITY: Clear mnemonic from UI after validation
       _clearMnemonicFields();
 
-      _updateSyncStatus('Connecting to Lightning network...', 3);
       final wallet = context.read<WalletProvider>();
-      await wallet.initializeWallet(mnemonic: mnemonic);
+      final name = _nameController.text.trim();
+      final isFirstWallet = wallet.wallets.isEmpty;
+
+      _updateSyncStatus('Connecting to Lightning network...', 3);
+
+      // Import wallet with the new multi-wallet API
+      await wallet.importWallet(name: name, mnemonic: mnemonic);
 
       if (wallet.error != null) {
-        // Clear saved mnemonic if initialization failed
-        await SecureStorageService.clearWallet();
         setState(() {
           _error = wallet.error;
           _isLoading = false;
@@ -128,11 +161,15 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
           ),
         );
 
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-          (route) => false,
-        );
+        if (isFirstWallet) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (route) => false,
+          );
+        } else {
+          Navigator.pop(context);
+        }
       }
     } catch (e) {
       setState(() {
@@ -165,6 +202,63 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_step == 0) {
+      return _buildNameStep();
+    }
+    return _buildSeedPhraseStep();
+  }
+
+  Widget _buildNameStep() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Restore Wallet'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Name your wallet',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Give your wallet a name so you can identify it easily',
+              style: TextStyle(color: Bolt21Theme.textSecondary),
+            ),
+            const SizedBox(height: 32),
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Wallet Name',
+                hintText: 'e.g., Savings, Daily Spending',
+                prefixIcon: Icon(Icons.account_balance_wallet),
+              ),
+              maxLength: 30,
+              textCapitalization: TextCapitalization.words,
+            ),
+            const Spacer(),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: _proceedToSeedPhrase,
+                child: const Text('Continue', style: TextStyle(fontSize: 18)),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeedPhraseStep() {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Restore Wallet'),

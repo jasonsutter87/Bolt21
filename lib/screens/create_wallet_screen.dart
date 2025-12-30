@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
-import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
 import '../utils/secure_clipboard.dart';
 import 'home_screen.dart';
 
 class CreateWalletScreen extends StatefulWidget {
-  const CreateWalletScreen({super.key});
+  /// If true, this is adding a wallet to existing wallets (not first wallet)
+  final bool addWallet;
+
+  const CreateWalletScreen({super.key, this.addWallet = false});
 
   @override
   State<CreateWalletScreen> createState() => _CreateWalletScreenState();
@@ -19,19 +20,31 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
   bool _isLoading = true;
   bool _backedUp = false;
   bool _showWords = false;
+  final _nameController = TextEditingController();
+  int _step = 0; // 0 = name, 1 = seed phrase
 
   @override
   void initState() {
     super.initState();
-    _generateMnemonic();
+    // Set default wallet name
+    final wallet = context.read<WalletProvider>();
+    _nameController.text = 'Wallet ${wallet.wallets.length + 1}';
+
+    // If this is the first wallet, skip name step and show seed immediately
+    if (!widget.addWallet && wallet.wallets.isEmpty) {
+      _nameController.text = 'Main Wallet';
+      _step = 1;
+      _generateMnemonic();
+    } else {
+      _isLoading = false;
+    }
   }
 
   @override
   void dispose() {
     // SECURITY: Clear mnemonic from memory when leaving screen
-    // Note: Dart strings are immutable and can't be truly wiped,
-    // but clearing the reference helps minimize exposure window
     _mnemonic = null;
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -44,21 +57,32 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
     });
   }
 
+  void _proceedToSeedPhrase() {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a wallet name'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+      return;
+    }
+    setState(() => _step = 1);
+    _generateMnemonic();
+  }
+
   Future<void> _createWallet() async {
     if (_mnemonic == null) return;
 
     setState(() => _isLoading = true);
 
-    // SECURITY: Copy mnemonic to local variable and clear class field ASAP
-    final mnemonicCopy = _mnemonic!;
-
     try {
-      // Save mnemonic securely
-      await SecureStorageService.saveMnemonic(mnemonicCopy);
-
-      // Initialize wallet
       final wallet = context.read<WalletProvider>();
-      await wallet.initializeWallet(mnemonic: mnemonicCopy);
+      final name = _nameController.text.trim();
+      final isFirstWallet = wallet.wallets.isEmpty;
+
+      // Use importWallet since we already have the mnemonic
+      await wallet.importWallet(name: name, mnemonic: _mnemonic!);
 
       // SECURITY: Clear mnemonic from UI state after successful storage
       if (mounted) {
@@ -71,11 +95,23 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
       }
 
       if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-          (route) => false,
-        );
+        if (isFirstWallet) {
+          // First wallet - go to home
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (route) => false,
+          );
+        } else {
+          // Added wallet - pop back
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Wallet "$name" created'),
+              backgroundColor: Bolt21Theme.success,
+            ),
+          );
+          Navigator.pop(context);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -93,11 +129,68 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_step == 0) {
+      return _buildNameStep();
+    }
+    return _buildSeedPhraseStep();
+  }
+
+  Widget _buildNameStep() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Create Wallet'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Name your wallet',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Give your wallet a name so you can identify it easily',
+              style: TextStyle(color: Bolt21Theme.textSecondary),
+            ),
+            const SizedBox(height: 32),
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Wallet Name',
+                hintText: 'e.g., Savings, Daily Spending',
+                prefixIcon: Icon(Icons.account_balance_wallet),
+              ),
+              maxLength: 30,
+              textCapitalization: TextCapitalization.words,
+            ),
+            const Spacer(),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: _proceedToSeedPhrase,
+                child: const Text('Continue', style: TextStyle(fontSize: 18)),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeedPhraseStep() {
     final words = _mnemonic?.split(' ') ?? [];
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Wallet'),
+        title: Text(widget.addWallet ? 'Create Wallet' : 'Create Wallet'),
       ),
       body: _isLoading && _mnemonic == null
           ? const Center(
@@ -140,11 +233,14 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Recovery Phrase',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                            Expanded(
+                              child: Text(
+                                '${_nameController.text} Recovery Phrase',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             TextButton.icon(

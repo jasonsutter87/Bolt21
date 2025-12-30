@@ -3,10 +3,12 @@ import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:provider/provider.dart';
 import 'providers/wallet_provider.dart';
 import 'services/auth_service.dart';
-import 'services/secure_storage_service.dart';
 import 'utils/theme.dart';
+import 'screens/create_wallet_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
+import 'screens/manage_wallets_screen.dart';
+import 'screens/restore_wallet_screen.dart';
 import 'screens/welcome_screen.dart';
 
 Future<void> main() async {
@@ -30,6 +32,17 @@ class Bolt21App extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: Bolt21Theme.darkTheme,
         home: const AppRouter(),
+        routes: {
+          '/create-wallet': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            return CreateWalletScreen(addWallet: args?['addWallet'] ?? false);
+          },
+          '/restore-wallet': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            return RestoreWalletScreen(addWallet: args?['addWallet'] ?? false);
+          },
+          '/manage-wallets': (context) => const ManageWalletsScreen(),
+        },
       ),
     );
   }
@@ -71,17 +84,13 @@ class _AppRouterState extends State<AppRouter> with WidgetsBindingObserver {
   }
 
   Future<void> _checkWalletStatus() async {
-    final hasWallet = await SecureStorageService.hasWallet();
     final biometricEnabled = await AuthService.isBiometricEnabled();
 
-    if (hasWallet) {
-      // Auto-load existing wallet
-      final mnemonic = await SecureStorageService.getMnemonic();
-      if (mnemonic != null && mounted) {
-        final wallet = context.read<WalletProvider>();
-        await wallet.initializeWallet(mnemonic: mnemonic);
-      }
-    }
+    // Load wallets (handles migration from single-wallet automatically)
+    final wallet = context.read<WalletProvider>();
+    await wallet.loadWallets();
+
+    final hasWallet = wallet.wallets.isNotEmpty;
 
     if (mounted) {
       setState(() {

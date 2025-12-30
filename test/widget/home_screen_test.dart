@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:bolt21/models/wallet_metadata.dart';
 import 'package:bolt21/screens/home_screen.dart';
 import 'package:bolt21/providers/wallet_provider.dart';
 import 'package:bolt21/services/lightning_service.dart';
@@ -34,6 +35,8 @@ class TestWalletProvider extends ChangeNotifier implements WalletProvider {
   GetInfoResponse? _info;
   List<Payment> _payments = [];
   List<OperationState> _incompleteOperations = [];
+  List<WalletMetadata> _wallets = [];
+  WalletMetadata? _activeWallet;
   final LightningService _lightningService = MockLightningService();
   final OperationStateService _operationStateService = MockOperationStateService();
 
@@ -52,6 +55,8 @@ class TestWalletProvider extends ChangeNotifier implements WalletProvider {
     _error = error;
     _payments = payments ?? [];
     _incompleteOperations = incompleteOperations ?? [];
+    _wallets = [WalletMetadata(id: 'test-id', name: 'Test Wallet', createdAt: DateTime.now())];
+    _activeWallet = _wallets.first;
     _info = GetInfoResponse(
       walletInfo: WalletInfo(
         balanceSat: BigInt.from(balanceSat),
@@ -76,13 +81,22 @@ class TestWalletProvider extends ChangeNotifier implements WalletProvider {
   @override bool get hasIncompleteOperations => _incompleteOperations.isNotEmpty;
   @override LightningService get lightningService => _lightningService;
   @override OperationStateService get operationStateService => _operationStateService;
+  @override List<WalletMetadata> get wallets => _wallets;
+  @override WalletMetadata? get activeWallet => _activeWallet;
+  @override bool get hasMultipleWallets => _wallets.length > 1;
 
   @override int get totalBalanceSats => _info?.walletInfo.balanceSat.toInt() ?? 0;
   @override int get pendingReceiveSats => _info?.walletInfo.pendingReceiveSat.toInt() ?? 0;
   @override int get pendingSendSats => _info?.walletInfo.pendingSendSat.toInt() ?? 0;
   @override String? get nodeId => _info?.walletInfo.pubkey;
 
-  @override Future<void> initializeWallet({String? mnemonic}) async {}
+  @override Future<void> loadWallets() async {}
+  @override Future<WalletMetadata> createWallet({required String name}) async => _activeWallet!;
+  @override Future<WalletMetadata> importWallet({required String name, required String mnemonic}) async => _activeWallet!;
+  @override Future<void> switchWallet(String walletId) async {}
+  @override Future<void> renameWallet(String walletId, String newName) async {}
+  @override Future<void> deleteWallet(String walletId) async {}
+  @override Future<String?> getMnemonic({String? walletId}) async => 'test mnemonic';
   @override String generateMnemonic() => 'test mnemonic';
   @override Future<void> refreshAll() async { notifyListeners(); }
   @override Future<String?> generateOnChainAddress() async => 'bc1qtest...';

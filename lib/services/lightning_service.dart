@@ -9,27 +9,40 @@ import '../utils/secure_logger.dart';
 class LightningService {
   BreezSdkLiquid? _sdk;
   bool _isInitialized = false;
+  String? _currentWalletId;
 
   bool get isInitialized => _isInitialized;
   BreezSdkLiquid? get sdk => _sdk;
+  String? get currentWalletId => _currentWalletId;
 
-  /// Initialize the Breez SDK
-  Future<void> initialize({String? mnemonic}) async {
-    if (_isInitialized) return;
+  /// Initialize the Breez SDK for a specific wallet
+  /// [walletId] - Unique wallet identifier for isolated data directory
+  /// [mnemonic] - Seed phrase (required for new wallets)
+  Future<void> initialize({
+    required String walletId,
+    required String mnemonic,
+  }) async {
+    // If already initialized with same wallet, skip
+    if (_isInitialized && _currentWalletId == walletId) return;
+
+    // If switching wallets, disconnect first
+    if (_isInitialized && _currentWalletId != walletId) {
+      await disconnect();
+    }
 
     try {
       // Ensure config is loaded
       await ConfigService.instance.initialize();
 
-      SecureLogger.info('Initializing SDK...', tag: 'Breez');
+      SecureLogger.info('Initializing SDK for wallet $walletId...', tag: 'Breez');
       final directory = await getApplicationDocumentsDirectory();
-      final workingDir = '${directory.path}/breez_sdk';
+      // Per-wallet directory for data isolation
+      final workingDir = '${directory.path}/wallet_$walletId';
 
       // Ensure directory exists
       await Directory(workingDir).create(recursive: true);
 
-      // Generate mnemonic if not provided
-      final seedPhrase = mnemonic ?? generateMnemonic();
+      final seedPhrase = mnemonic;
 
       SecureLogger.info('Creating config...', tag: 'Breez');
       // Get default config and update the working directory
@@ -65,8 +78,9 @@ class LightningService {
 
       _sdk = await connect(req: connectRequest);
       _isInitialized = true;
+      _currentWalletId = walletId;
 
-      SecureLogger.info('SDK initialized successfully', tag: 'Breez');
+      SecureLogger.info('SDK initialized successfully for wallet $walletId', tag: 'Breez');
     } catch (e, stack) {
       SecureLogger.error('Failed to initialize SDK', error: e, stackTrace: stack, tag: 'Breez');
       rethrow;
@@ -201,7 +215,9 @@ class LightningService {
   Future<void> disconnect() async {
     if (_sdk != null) {
       await _sdk!.disconnect();
+      _sdk = null;
       _isInitialized = false;
+      _currentWalletId = null;
     }
   }
 

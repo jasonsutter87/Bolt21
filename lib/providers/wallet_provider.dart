@@ -1,13 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:synchronized/synchronized.dart';
+import '../models/wallet_metadata.dart';
 import '../services/lightning_service.dart';
 import '../services/operation_state_service.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/retry_helper.dart';
 import '../utils/secure_logger.dart';
 
-/// Wallet state management
+/// Wallet state management with multi-wallet support
 class WalletProvider extends ChangeNotifier {
   final LightningService _lightningService = LightningService();
   final OperationStateService _operationStateService = OperationStateService();
@@ -15,7 +16,11 @@ class WalletProvider extends ChangeNotifier {
   // Atomic mutex lock to prevent concurrent payment operations (TOCTOU-safe)
   final Lock _sendLock = Lock();
 
-  // State
+  // Multi-wallet state
+  List<WalletMetadata> _wallets = [];
+  WalletMetadata? _activeWallet;
+
+  // Per-wallet state
   bool _isLoading = false;
   bool _isInitialized = false;
   String? _error;
@@ -25,7 +30,12 @@ class WalletProvider extends ChangeNotifier {
   List<Payment> _payments = [];
   List<OperationState> _incompleteOperations = [];
 
-  // Getters
+  // Getters - Multi-wallet
+  List<WalletMetadata> get wallets => _wallets;
+  WalletMetadata? get activeWallet => _activeWallet;
+  bool get hasMultipleWallets => _wallets.length > 1;
+
+  // Getters - Per-wallet state
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
   String? get error => _error;
@@ -55,31 +65,261 @@ class WalletProvider extends ChangeNotifier {
     return _info?.walletInfo.pubkey;
   }
 
-  /// Initialize wallet with existing or new mnemonic
-  Future<void> initializeWallet({String? mnemonic}) async {
+  /// Load wallet list and initialize active wallet
+  /// Call this on app startup
+  Future<void> loadWallets() async {
     _setLoading(true);
     _error = null;
 
     try {
-      // Initialize operation state tracking first
+      // Check for and perform migration from single-wallet to multi-wallet
+      final migratedWallet = await SecureStorageService.migrateLegacyWallet();
+      if (migratedWallet != null) {
+        SecureLogger.info('Migrated legacy wallet to multi-wallet format', tag: 'Wallet');
+      }
+
+      // Load wallet list
+      _wallets = await SecureStorageService.getWalletList();
+
+      if (_wallets.isEmpty) {
+        // No wallets exist - user needs to create or restore
+        _isInitialized = false;
+        _setLoading(false);
+        return;
+      }
+
+      // Get active wallet ID or default to first wallet
+      final activeId = await SecureStorageService.getActiveWalletId();
+      _activeWallet = _wallets.firstWhere(
+        (w) => w.id == activeId,
+        orElse: () => _wallets.first,
+      );
+
+      // Initialize the active wallet
+      await _initializeActiveWallet();
+    } catch (e) {
+      _error = e.toString();
+      SecureLogger.error('Failed to load wallets', error: e, tag: 'Wallet');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Initialize the currently active wallet's Lightning connection
+  Future<void> _initializeActiveWallet() async {
+    if (_activeWallet == null) return;
+
+    try {
+      // Initialize operation state tracking
       await _operationStateService.initialize();
 
-      await _lightningService.initialize(mnemonic: mnemonic);
+      // Get mnemonic for active wallet
+      final mnemonic = await SecureStorageService.getMnemonic(
+        walletId: _activeWallet!.id,
+      );
+
+      if (mnemonic == null) {
+        throw Exception('Mnemonic not found for wallet ${_activeWallet!.name}');
+      }
+
+      // Initialize Lightning service with wallet-specific directory
+      await _lightningService.initialize(
+        walletId: _activeWallet!.id,
+        mnemonic: mnemonic,
+      );
+
       _isInitialized = true;
       await _refreshAll();
 
-      // Restore previously generated addresses from secure storage
-      _onChainAddress = await SecureStorageService.getOnChainAddress();
-      _bolt12Offer = await SecureStorageService.getBolt12Offer();
+      // Restore previously generated addresses for this wallet
+      _onChainAddress = await SecureStorageService.getOnChainAddress(
+        walletId: _activeWallet!.id,
+      );
+      _bolt12Offer = await SecureStorageService.getBolt12Offer(
+        walletId: _activeWallet!.id,
+      );
 
-      // Check for any incomplete operations from previous session
+      // Check for incomplete operations
       await _checkIncompleteOperations();
     } catch (e) {
       _error = e.toString();
       SecureLogger.error('Wallet initialization error', error: e, tag: 'Wallet');
+      rethrow;
+    }
+  }
+
+  /// Create a new wallet with generated mnemonic
+  Future<WalletMetadata> createWallet({required String name}) async {
+    _setLoading(true);
+    _error = null;
+
+    try {
+      // Generate new mnemonic
+      final mnemonic = _lightningService.generateMnemonic();
+
+      // Create wallet metadata
+      final wallet = WalletMetadata.create(name: name);
+
+      // Save mnemonic
+      await SecureStorageService.saveMnemonic(mnemonic, walletId: wallet.id);
+
+      // Add to wallet list
+      _wallets = [..._wallets, wallet];
+      await SecureStorageService.saveWalletList(_wallets);
+
+      // Switch to new wallet
+      await switchWallet(wallet.id);
+
+      notifyListeners();
+      return wallet;
+    } catch (e) {
+      _error = e.toString();
+      SecureLogger.error('Failed to create wallet', error: e, tag: 'Wallet');
+      rethrow;
     } finally {
       _setLoading(false);
     }
+  }
+
+  /// Import a wallet with provided mnemonic
+  Future<WalletMetadata> importWallet({
+    required String name,
+    required String mnemonic,
+  }) async {
+    _setLoading(true);
+    _error = null;
+
+    try {
+      // Create wallet metadata
+      final wallet = WalletMetadata.create(name: name);
+
+      // Save mnemonic
+      await SecureStorageService.saveMnemonic(mnemonic, walletId: wallet.id);
+
+      // Add to wallet list
+      _wallets = [..._wallets, wallet];
+      await SecureStorageService.saveWalletList(_wallets);
+
+      // Switch to new wallet
+      await switchWallet(wallet.id);
+
+      notifyListeners();
+      return wallet;
+    } catch (e) {
+      _error = e.toString();
+      SecureLogger.error('Failed to import wallet', error: e, tag: 'Wallet');
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Switch to a different wallet
+  Future<void> switchWallet(String walletId) async {
+    final wallet = _wallets.firstWhere(
+      (w) => w.id == walletId,
+      orElse: () => throw Exception('Wallet not found'),
+    );
+
+    if (_activeWallet?.id == walletId && _isInitialized) {
+      return; // Already active
+    }
+
+    _setLoading(true);
+    _error = null;
+
+    try {
+      // Clear current wallet state
+      _clearWalletState();
+
+      // Set new active wallet
+      _activeWallet = wallet;
+      await SecureStorageService.setActiveWalletId(walletId);
+
+      // Initialize the new wallet
+      await _initializeActiveWallet();
+
+      SecureLogger.info('Switched to wallet: ${wallet.name}', tag: 'Wallet');
+    } catch (e) {
+      _error = e.toString();
+      SecureLogger.error('Failed to switch wallet', error: e, tag: 'Wallet');
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Rename a wallet
+  Future<void> renameWallet(String walletId, String newName) async {
+    final index = _wallets.indexWhere((w) => w.id == walletId);
+    if (index == -1) throw Exception('Wallet not found');
+
+    _wallets[index] = _wallets[index].copyWith(name: newName);
+    await SecureStorageService.saveWalletList(_wallets);
+
+    // Update active wallet reference if needed
+    if (_activeWallet?.id == walletId) {
+      _activeWallet = _wallets[index];
+    }
+
+    notifyListeners();
+  }
+
+  /// Delete a wallet (cannot delete last wallet)
+  Future<void> deleteWallet(String walletId) async {
+    if (_wallets.length <= 1) {
+      throw Exception('Cannot delete the last wallet');
+    }
+
+    final wallet = _wallets.firstWhere(
+      (w) => w.id == walletId,
+      orElse: () => throw Exception('Wallet not found'),
+    );
+
+    _setLoading(true);
+
+    try {
+      // If deleting active wallet, switch to another first
+      if (_activeWallet?.id == walletId) {
+        final otherWallet = _wallets.firstWhere((w) => w.id != walletId);
+        await switchWallet(otherWallet.id);
+      }
+
+      // Remove from list
+      _wallets = _wallets.where((w) => w.id != walletId).toList();
+      await SecureStorageService.saveWalletList(_wallets);
+
+      // Delete wallet data
+      await SecureStorageService.deleteWalletData(walletId);
+
+      SecureLogger.info('Deleted wallet: ${wallet.name}', tag: 'Wallet');
+      notifyListeners();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Clear current wallet state (when switching wallets)
+  void _clearWalletState() {
+    _isInitialized = false;
+    _info = null;
+    _payments = [];
+    _onChainAddress = null;
+    _bolt12Offer = null;
+    _incompleteOperations = [];
+    _error = null;
+  }
+
+  /// Get mnemonic for a specific wallet (for recovery phrase display)
+  Future<String?> getMnemonic({String? walletId}) async {
+    final id = walletId ?? _activeWallet?.id;
+    if (id == null) return null;
+    return SecureStorageService.getMnemonic(walletId: id);
+  }
+
+  /// Generate a new mnemonic (for create wallet flow)
+  String generateMnemonic() {
+    return _lightningService.generateMnemonic();
   }
 
   /// Check for incomplete operations from previous session
@@ -119,11 +359,6 @@ class WalletProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Generate a new mnemonic
-  String generateMnemonic() {
-    return _lightningService.generateMnemonic();
-  }
-
   /// Refresh all wallet data
   Future<void> refreshAll() async {
     if (!_isInitialized) return;
@@ -156,7 +391,7 @@ class WalletProvider extends ChangeNotifier {
 
   /// Get new on-chain address
   Future<String?> generateOnChainAddress() async {
-    if (!_isInitialized) return null;
+    if (!_isInitialized || _activeWallet == null) return null;
 
     final operation = await _operationStateService.createOperation(
       type: OperationType.receiveOnchain,
@@ -165,8 +400,11 @@ class WalletProvider extends ChangeNotifier {
     try {
       await _operationStateService.markExecuting(operation.id);
       _onChainAddress = await _lightningService.getOnChainAddress();
-      // Persist to secure storage for app restart
-      await SecureStorageService.saveOnChainAddress(_onChainAddress!);
+      // Persist to secure storage for app restart (per-wallet)
+      await SecureStorageService.saveOnChainAddress(
+        _onChainAddress!,
+        walletId: _activeWallet!.id,
+      );
       await _operationStateService.markCompleted(operation.id);
       notifyListeners();
       return _onChainAddress;
@@ -180,7 +418,7 @@ class WalletProvider extends ChangeNotifier {
 
   /// Generate BOLT12 offer
   Future<String?> generateBolt12Offer() async {
-    if (!_isInitialized) return null;
+    if (!_isInitialized || _activeWallet == null) return null;
 
     final operation = await _operationStateService.createOperation(
       type: OperationType.receiveBolt12,
@@ -189,8 +427,11 @@ class WalletProvider extends ChangeNotifier {
     try {
       await _operationStateService.markExecuting(operation.id);
       _bolt12Offer = await _lightningService.generateBolt12Offer();
-      // Persist to secure storage for app restart
-      await SecureStorageService.saveBolt12Offer(_bolt12Offer!);
+      // Persist to secure storage for app restart (per-wallet)
+      await SecureStorageService.saveBolt12Offer(
+        _bolt12Offer!,
+        walletId: _activeWallet!.id,
+      );
       await _operationStateService.markCompleted(operation.id);
       notifyListeners();
       return _bolt12Offer;

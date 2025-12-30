@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
 import '../utils/secure_clipboard.dart';
+import 'manage_wallets_screen.dart';
 import 'welcome_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -108,13 +109,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const _SectionHeader(title: 'Wallet'),
           _SettingsTile(
+            icon: Icons.account_balance_wallet,
+            title: 'Manage Wallets',
+            subtitle: 'Add, rename, or delete wallets',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ManageWalletsScreen()),
+            ),
+          ),
+          _SettingsTile(
             icon: Icons.key,
             title: 'Backup Recovery Phrase',
             subtitle: 'View your 12-word seed phrase',
             onTap: () => _showBackupSheet(context),
           ),
           _SettingsTile(
-            icon: Icons.account_balance_wallet,
+            icon: Icons.info_outline,
             title: 'Node Info',
             subtitle: 'View your node ID and status',
             onTap: () => _showNodeInfo(context),
@@ -259,7 +269,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _resetWallet(BuildContext context) async {
     final wallet = context.read<WalletProvider>();
     await wallet.lightningService.disconnect();
-    await SecureStorageService.clearWallet();
+    await SecureStorageService.clearAllWallets();
 
     if (context.mounted) {
       Navigator.pushAndRemoveUntil(
@@ -336,6 +346,7 @@ class _BackupSheet extends StatefulWidget {
 
 class _BackupSheetState extends State<_BackupSheet> {
   String? _mnemonic;
+  String? _walletName;
   bool _isLoading = true;
   bool _showWords = false;
 
@@ -346,9 +357,11 @@ class _BackupSheetState extends State<_BackupSheet> {
   }
 
   Future<void> _loadMnemonic() async {
-    final mnemonic = await SecureStorageService.getMnemonic();
+    final wallet = context.read<WalletProvider>();
+    final mnemonic = await wallet.getMnemonic();
     setState(() {
       _mnemonic = mnemonic;
+      _walletName = wallet.activeWallet?.name;
       _isLoading = false;
     });
   }
@@ -378,9 +391,9 @@ class _BackupSheetState extends State<_BackupSheet> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Recovery Phrase',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            Text(
+              _walletName != null ? '$_walletName Recovery Phrase' : 'Recovery Phrase',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
