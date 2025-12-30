@@ -22,7 +22,10 @@ class WalletProvider extends ChangeNotifier {
 
   // SECURITY: Rate limiting for payment attempts (prevent DoS and rapid drain attacks)
   static const int _maxPaymentAttemptsPerMinute = 5;
-  final List<DateTime> _paymentAttempts = [];
+  // SECURITY: Use monotonic time (elapsed milliseconds) to prevent clock skew bypass
+  // DateTime.now() can go backward if system clock is adjusted
+  final Stopwatch _rateLimitClock = Stopwatch()..start();
+  final List<int> _paymentAttemptTimestamps = []; // Monotonic milliseconds
 
   // Multi-wallet state
   List<WalletMetadata> _wallets = [];
@@ -511,21 +514,24 @@ class WalletProvider extends ChangeNotifier {
   /// SECURITY: Atomically check and record payment attempt for rate limiting
   /// Returns true if rate limited (too many attempts), false if allowed
   /// Uses mutex lock to prevent race condition between check and record
+  /// Uses monotonic clock (Stopwatch) to prevent clock skew bypass attacks
   Future<bool> _checkAndRecordPaymentAttempt() async {
     return await _rateLimitLock.synchronized(() {
-      final now = DateTime.now();
-      final oneMinuteAgo = now.subtract(const Duration(minutes: 1));
+      // SECURITY: Use monotonic time - immune to system clock adjustments
+      final nowMs = _rateLimitClock.elapsedMilliseconds;
+      const oneMinuteMs = 60 * 1000;
+      final cutoffMs = nowMs - oneMinuteMs;
 
-      // Remove attempts older than 1 minute
-      _paymentAttempts.removeWhere((attempt) => attempt.isBefore(oneMinuteAgo));
+      // Remove attempts older than 1 minute (monotonic)
+      _paymentAttemptTimestamps.removeWhere((timestamp) => timestamp < cutoffMs);
 
       // Check if rate limited
-      if (_paymentAttempts.length >= _maxPaymentAttemptsPerMinute) {
+      if (_paymentAttemptTimestamps.length >= _maxPaymentAttemptsPerMinute) {
         return true; // Rate limited
       }
 
       // Record this attempt atomically with the check
-      _paymentAttempts.add(now);
+      _paymentAttemptTimestamps.add(nowMs);
       return false; // Allowed
     });
   }
@@ -629,6 +635,14 @@ class WalletProvider extends ChangeNotifier {
       // SECURITY: Double-check inside lock with wallet isolation
       // Must filter by walletId to prevent cross-wallet operation confusion
       final activeWalletId = _activeWallet?.id;
+
+      // SECURITY: Reject if no active wallet (prevents null comparison issues)
+      if (activeWalletId == null) {
+        _error = 'No active wallet selected';
+        notifyListeners();
+        return null;
+      }
+
       final existing = _operationStateService.getAllOperations().where((op) =>
           op.walletId == activeWalletId &&
           op.destination == destination &&
