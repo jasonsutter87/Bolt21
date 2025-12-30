@@ -41,6 +41,10 @@ class SecureStorageService {
   static String _onChainAddressKey(String walletId) => 'bolt21_onchain_$walletId';
   static String _bolt12OfferKey(String walletId) => 'bolt21_bolt12_$walletId';
 
+  // LND connection keys (global, not per-wallet)
+  static const _lndRestUrlKey = 'bolt21_lnd_rest_url';
+  static const _lndMacaroonKey = 'bolt21_lnd_macaroon';
+
   // ============================================
   // INITIALIZATION
   // ============================================
@@ -151,6 +155,42 @@ class SecureStorageService {
   /// Get BOLT12 offer for a specific wallet
   static Future<String?> getBolt12Offer({required String walletId}) async {
     return await _storage.read(key: _bolt12OfferKey(walletId));
+  }
+
+  // ============================================
+  // LND NODE CONNECTION
+  // ============================================
+
+  /// Save LND connection credentials
+  static Future<void> saveLndCredentials({
+    required String restUrl,
+    required String macaroon,
+  }) async {
+    await _storage.write(key: _lndRestUrlKey, value: restUrl);
+    await _storage.write(key: _lndMacaroonKey, value: macaroon);
+  }
+
+  /// Get LND REST URL
+  static Future<String?> getLndRestUrl() async {
+    return await _storage.read(key: _lndRestUrlKey);
+  }
+
+  /// Get LND macaroon (hex encoded)
+  static Future<String?> getLndMacaroon() async {
+    return await _storage.read(key: _lndMacaroonKey);
+  }
+
+  /// Check if LND is configured
+  static Future<bool> hasLndCredentials() async {
+    final url = await getLndRestUrl();
+    final macaroon = await getLndMacaroon();
+    return url != null && macaroon != null;
+  }
+
+  /// Clear LND credentials
+  static Future<void> clearLndCredentials() async {
+    await _storage.delete(key: _lndRestUrlKey);
+    await _storage.delete(key: _lndMacaroonKey);
   }
 
   /// Delete all data for a specific wallet

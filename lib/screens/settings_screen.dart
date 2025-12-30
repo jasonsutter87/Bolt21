@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
 import '../services/auth_service.dart';
+import '../services/lnd_service.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
 import '../utils/secure_clipboard.dart';
@@ -134,6 +136,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const _SectionHeader(title: 'Lightning'),
           _SettingsTile(
+            icon: Icons.router,
+            title: 'Connect Your Node',
+            subtitle: 'Use your own LND node for sends',
+            onTap: () => _showConnectNode(context),
+          ),
+          _SettingsTile(
             icon: Icons.electrical_services,
             title: 'Channels',
             subtitle: 'View and manage Lightning channels',
@@ -144,6 +152,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Liquidity (LSP)',
             subtitle: 'Configure Lightning Service Provider',
             onTap: () => _showLspConfig(context),
+          ),
+          _SettingsTile(
+            icon: Icons.refresh,
+            title: 'Recover Stuck Funds',
+            subtitle: 'Reclaim funds from failed swaps',
+            onTap: () => _showRefundables(context),
           ),
           const Divider(),
 
@@ -235,6 +249,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ],
     );
+  }
+
+  void _showConnectNode(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ConnectNodeScreen()),
+    );
+  }
+
+  void _showRefundables(BuildContext context) async {
+    final wallet = context.read<WalletProvider>();
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final refundables = await wallet.lightningService.listRefundables();
+      if (!context.mounted) return;
+      Navigator.pop(context); // Close loading
+
+      if (refundables.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No stuck funds to recover'),
+            backgroundColor: Bolt21Theme.success,
+          ),
+        );
+        return;
+      }
+
+      // Show refundables
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Bolt21Theme.darkCard,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => _RefundablesSheet(
+          refundables: refundables,
+          wallet: wallet,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.pop(context); // Close loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error checking refundables: $e'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+    }
   }
 
   void _confirmReset(BuildContext context) {
@@ -737,6 +808,632 @@ class ChannelsScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Sheet to display and recover stuck funds
+class _RefundablesSheet extends StatefulWidget {
+  final List<RefundableSwap> refundables;
+  final WalletProvider wallet;
+
+  const _RefundablesSheet({
+    required this.refundables,
+    required this.wallet,
+  });
+
+  @override
+  State<_RefundablesSheet> createState() => _RefundablesSheetState();
+}
+
+class _RefundablesSheetState extends State<_RefundablesSheet> {
+  bool _isProcessing = false;
+
+  Future<void> _refundSwap(RefundableSwap swap) async {
+    setState(() => _isProcessing = true);
+
+    try {
+      // Get an on-chain address to refund to
+      final refundAddress = await widget.wallet.lightningService.getOnChainAddress();
+
+      // Get recommended fees
+      final fees = await widget.wallet.lightningService.getRecommendedFees();
+
+      // Process refund
+      await widget.wallet.lightningService.refundSwap(
+        swapAddress: swap.swapAddress,
+        refundAddress: refundAddress,
+        feeRateSatPerVbyte: fees.fastestFee.toInt(),
+      );
+
+      if (!mounted) return;
+
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Refund initiated for ${swap.amountSat} sats'),
+          backgroundColor: Bolt21Theme.success,
+        ),
+      );
+
+      // Refresh wallet
+      await widget.wallet.refreshAll();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Refund failed: $e'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Bolt21Theme.textSecondary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Stuck Funds',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${widget.refundables.length} swap(s) can be recovered',
+            style: const TextStyle(color: Bolt21Theme.textSecondary),
+          ),
+          const SizedBox(height: 24),
+
+          // List refundables
+          ...widget.refundables.map((swap) => Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Bolt21Theme.darkBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Bolt21Theme.orange.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${swap.amountSat} sats',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Bolt21Theme.orange,
+                      ),
+                    ),
+                    if (_isProcessing)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      ElevatedButton(
+                        onPressed: () => _refundSwap(swap),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Bolt21Theme.orange,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                        ),
+                        child: const Text('Recover'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Address: ${swap.swapAddress.substring(0, 16)}...',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Bolt21Theme.textSecondary,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          )),
+
+          const SizedBox(height: 16),
+          const Text(
+            'Tap "Recover" to return these funds to your wallet. '
+            'This may take a few minutes to confirm on-chain.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Bolt21Theme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+}
+
+/// Screen to connect to user's LND node
+class ConnectNodeScreen extends StatefulWidget {
+  const ConnectNodeScreen({super.key});
+
+  @override
+  State<ConnectNodeScreen> createState() => _ConnectNodeScreenState();
+}
+
+class _ConnectNodeScreenState extends State<ConnectNodeScreen> {
+  final _restUrlController = TextEditingController();
+  final _macaroonController = TextEditingController();
+  final _lndService = LndService();
+
+  bool _isLoading = false;
+  bool _isConnected = false;
+  LndNodeInfo? _nodeInfo;
+  LndBalance? _balance;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExistingCredentials();
+  }
+
+  @override
+  void dispose() {
+    _restUrlController.dispose();
+    _macaroonController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadExistingCredentials() async {
+    final restUrl = await SecureStorageService.getLndRestUrl();
+    final macaroon = await SecureStorageService.getLndMacaroon();
+
+    if (restUrl != null && macaroon != null) {
+      _restUrlController.text = restUrl;
+      _macaroonController.text = macaroon;
+      // Auto-connect if credentials exist
+      await _testConnection();
+    }
+  }
+
+  Future<void> _testConnection() async {
+    if (_restUrlController.text.isEmpty || _macaroonController.text.isEmpty) {
+      setState(() => _error = 'Please enter REST URL and macaroon');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      _lndService.configure(
+        restUrl: _restUrlController.text.trim(),
+        macaroon: _macaroonController.text.trim(),
+      );
+
+      final info = await _lndService.connect();
+      final balance = await _lndService.getBalance();
+
+      // Save credentials on successful connection
+      await SecureStorageService.saveLndCredentials(
+        restUrl: _restUrlController.text.trim(),
+        macaroon: _macaroonController.text.trim(),
+      );
+
+      setState(() {
+        _isConnected = true;
+        _nodeInfo = info;
+        _balance = balance;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Connected to ${info.alias}!'),
+            backgroundColor: Bolt21Theme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isConnected = false;
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _disconnect() async {
+    await SecureStorageService.clearLndCredentials();
+    _lndService.disconnect();
+    setState(() {
+      _isConnected = false;
+      _nodeInfo = null;
+      _balance = null;
+      _restUrlController.clear();
+      _macaroonController.clear();
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Node disconnected'),
+          backgroundColor: Bolt21Theme.orange,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Connect Your Node'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Status card
+            if (_isConnected && _nodeInfo != null) ...[
+              _ConnectedNodeCard(
+                nodeInfo: _nodeInfo!,
+                balance: _balance,
+                onDisconnect: _disconnect,
+              ),
+              const SizedBox(height: 24),
+            ] else ...[
+              // Instructions
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Bolt21Theme.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Bolt21Theme.orange.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Bolt21Theme.orange, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Connect to Your LND Node',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Bolt21Theme.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Use your own Lightning node for sending payments with near-zero fees.\n\n'
+                      'You\'ll need:\n'
+                      '• REST API URL (e.g., https://your-node:8080)\n'
+                      '• Admin macaroon (hex encoded)',
+                      style: TextStyle(color: Bolt21Theme.textSecondary, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // REST URL input
+              TextField(
+                controller: _restUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'REST API URL',
+                  hintText: 'https://your-node.local:8080',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.link),
+                ),
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 16),
+
+              // Macaroon input
+              TextField(
+                controller: _macaroonController,
+                decoration: const InputDecoration(
+                  labelText: 'Admin Macaroon (hex)',
+                  hintText: '0201036c6e6402...',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.vpn_key),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Get this from: lncli bakemacaroon --save_to admin.macaroon',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Bolt21Theme.textSecondary.withValues(alpha: 0.7),
+                  fontFamily: 'monospace',
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Error display
+              if (_error != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Bolt21Theme.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Bolt21Theme.error, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: Bolt21Theme.error, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // Connect button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _testConnection,
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Connect'),
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 32),
+
+            // How it works
+            const Text(
+              'How it works',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _HowItWorksItem(
+              icon: Icons.bolt,
+              title: 'BOLT12 Receives',
+              description: 'Still uses Breez SDK for Ocean mining payouts',
+            ),
+            _HowItWorksItem(
+              icon: Icons.send,
+              title: 'Sends via Your Node',
+              description: 'Use your channels for near-zero fee payments',
+            ),
+            _HowItWorksItem(
+              icon: Icons.account_balance_wallet,
+              title: 'Your Liquidity',
+              description: 'Payments route through your 10M+ sat channels',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConnectedNodeCard extends StatelessWidget {
+  final LndNodeInfo nodeInfo;
+  final LndBalance? balance;
+  final VoidCallback onDisconnect;
+
+  const _ConnectedNodeCard({
+    required this.nodeInfo,
+    required this.balance,
+    required this.onDisconnect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Bolt21Theme.success.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Bolt21Theme.success.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Bolt21Theme.success.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check, color: Bolt21Theme.success, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      nodeInfo.alias,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '${nodeInfo.numActiveChannels} channels • ${nodeInfo.syncedToChain ? "Synced" : "Syncing..."}',
+                      style: const TextStyle(
+                        color: Bolt21Theme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (balance != null) ...[
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _BalanceStat(
+                  label: 'Spendable',
+                  value: '${_formatSats(balance!.spendableBalance)} sats',
+                ),
+                _BalanceStat(
+                  label: 'On-chain',
+                  value: '${_formatSats(balance!.onChainConfirmed)} sats',
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: onDisconnect,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Bolt21Theme.error,
+                side: const BorderSide(color: Bolt21Theme.error),
+              ),
+              child: const Text('Disconnect'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatSats(int sats) {
+    if (sats >= 1000000) {
+      return '${(sats / 1000000).toStringAsFixed(2)}M';
+    } else if (sats >= 1000) {
+      return '${(sats / 1000).toStringAsFixed(1)}k';
+    }
+    return sats.toString();
+  }
+}
+
+class _BalanceStat extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _BalanceStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Bolt21Theme.textSecondary,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HowItWorksItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+
+  const _HowItWorksItem({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Bolt21Theme.orange, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    color: Bolt21Theme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

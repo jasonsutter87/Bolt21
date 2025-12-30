@@ -3,6 +3,8 @@ import 'package:flutter_breez_liquid/flutter_breez_liquid.dart';
 import 'package:synchronized/synchronized.dart';
 import '../models/wallet_metadata.dart';
 import '../services/lightning_service.dart';
+import '../services/lnd_service.dart';
+import '../services/notification_service.dart';
 import '../services/operation_state_service.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/retry_helper.dart';
@@ -11,6 +13,7 @@ import '../utils/secure_logger.dart';
 /// Wallet state management with multi-wallet support
 class WalletProvider extends ChangeNotifier {
   final LightningService _lightningService = LightningService();
+  final LndService _lndService = LndService();
   final OperationStateService _operationStateService = OperationStateService();
 
   // Atomic mutex lock to prevent concurrent payment operations (TOCTOU-safe)
@@ -41,6 +44,11 @@ class WalletProvider extends ChangeNotifier {
   List<Payment> _payments = [];
   List<OperationState> _incompleteOperations = [];
 
+  // LND node connection state (hybrid mode)
+  bool _lndConnected = false;
+  LndNodeInfo? _lndNodeInfo;
+  LndBalance? _lndBalance;
+
   // Getters - Multi-wallet
   List<WalletMetadata> get wallets => _wallets;
   WalletMetadata? get activeWallet => _activeWallet;
@@ -55,9 +63,15 @@ class WalletProvider extends ChangeNotifier {
   GetInfoResponse? get info => _info;
   List<Payment> get payments => _payments;
   LightningService get lightningService => _lightningService;
+  LndService get lndService => _lndService;
   List<OperationState> get incompleteOperations => _incompleteOperations;
   bool get hasIncompleteOperations => _incompleteOperations.isNotEmpty;
   OperationStateService get operationStateService => _operationStateService;
+
+  // LND (hybrid mode) getters
+  bool get isLndConnected => _lndConnected;
+  LndNodeInfo? get lndNodeInfo => _lndNodeInfo;
+  LndBalance? get lndBalance => _lndBalance;
 
   // Derived getters
   int get totalBalanceSats {
@@ -142,6 +156,11 @@ class WalletProvider extends ChangeNotifier {
       _isInitialized = true;
       await _refreshAll();
 
+      // Subscribe to payment events for notifications
+      NotificationService.instance.subscribeToPayments(
+        _lightningService.paymentEvents,
+      );
+
       // Restore previously generated addresses for this wallet
       _onChainAddress = await SecureStorageService.getOnChainAddress(
         walletId: _activeWallet!.id,
@@ -152,10 +171,198 @@ class WalletProvider extends ChangeNotifier {
 
       // Check for incomplete operations
       await _checkIncompleteOperations();
+
+      // Auto-recover stuck swaps (runs in background)
+      _autoRecoverStuckSwaps();
+
+      // Check for LND node connection (hybrid mode)
+      await _checkLndConnection();
     } catch (e) {
       _error = e.toString();
       SecureLogger.error('Wallet initialization error', error: e, tag: 'Wallet');
       rethrow;
+    }
+  }
+
+  /// Check if LND credentials exist and try to connect
+  /// This enables hybrid mode for near-zero fee sends via user's own node
+  Future<void> _checkLndConnection() async {
+    try {
+      final hasCredentials = await SecureStorageService.hasLndCredentials();
+      if (!hasCredentials) {
+        _lndConnected = false;
+        _lndNodeInfo = null;
+        _lndBalance = null;
+        return;
+      }
+
+      final restUrl = await SecureStorageService.getLndRestUrl();
+      final macaroon = await SecureStorageService.getLndMacaroon();
+
+      if (restUrl != null && macaroon != null) {
+        _lndService.configure(restUrl: restUrl, macaroon: macaroon);
+        _lndNodeInfo = await _lndService.connect();
+        _lndBalance = await _lndService.getBalance();
+        _lndConnected = true;
+        SecureLogger.info('LND hybrid mode active: ${_lndNodeInfo?.alias}', tag: 'LND');
+      }
+    } catch (e) {
+      // LND connection is optional - don't fail wallet init
+      _lndConnected = false;
+      _lndNodeInfo = null;
+      _lndBalance = null;
+      SecureLogger.warn('LND connection failed (optional): $e', tag: 'LND');
+    }
+  }
+
+  /// Refresh LND connection state
+  Future<void> refreshLndConnection() async {
+    await _checkLndConnection();
+    notifyListeners();
+  }
+
+  /// Check if a destination should be routed via LND
+  /// BOLT11 invoices go via LND when connected, BOLT12 stays on Breez
+  bool shouldUseLndForDestination(String destination) {
+    if (!_lndConnected) return false;
+
+    final lower = destination.toLowerCase().trim();
+    // Only route BOLT11 invoices via LND
+    // BOLT12 offers need Breez SDK's support
+    return lower.startsWith('lnbc') || lower.startsWith('lntb') || lower.startsWith('lntbs');
+  }
+
+  /// Send payment via user's LND node (for BOLT11 invoices)
+  /// Returns operation ID on success, null on failure
+  Future<String?> sendPaymentViaLnd(String paymentRequest, {int? amountSat}) async {
+    if (!_lndConnected) {
+      _error = 'LND node not connected';
+      notifyListeners();
+      return null;
+    }
+
+    // SECURITY: Rate limiting applies to all payment methods
+    final isRateLimited = await _checkAndRecordPaymentAttempt();
+    if (isRateLimited) {
+      _error = 'Too many payment attempts. Please wait a moment.';
+      notifyListeners();
+      return null;
+    }
+
+    // SECURITY: Block wallet switching during payment
+    _paymentInProgress = true;
+    _setLoading(true);
+
+    // Create operation record for tracking
+    final operation = await _operationStateService.createOperation(
+      type: OperationType.send,
+      walletId: _activeWallet!.id,
+      destination: paymentRequest,
+      amountSat: amountSat,
+    );
+
+    try {
+      await _operationStateService.markPreparing(operation.id);
+
+      // Decode invoice to check amount
+      final decoded = await _lndService.decodeInvoice(paymentRequest);
+      final sendAmountSat = amountSat ?? (decoded.amountSat > 0 ? decoded.amountSat : null);
+
+      // Validate we have an amount for zero-amount invoices
+      if (sendAmountSat == null || sendAmountSat <= 0) {
+        throw Exception('Amount required for zero-amount invoice');
+      }
+
+      // Check LND spendable balance
+      if (_lndBalance != null && sendAmountSat > _lndBalance!.spendableBalance) {
+        throw Exception(
+          'Insufficient LND channel balance. Available: ${_lndBalance!.spendableBalance} sats',
+        );
+      }
+
+      await _operationStateService.markExecuting(operation.id);
+
+      // Send via LND
+      final result = await _lndService.payInvoice(
+        paymentRequest: paymentRequest,
+        amountSat: decoded.amountSat == 0 ? sendAmountSat : null,
+        feeLimitSat: 100, // Max 100 sats fee for routing
+      );
+
+      await _operationStateService.markCompleted(
+        operation.id,
+        txId: result.paymentHash,
+      );
+
+      // Refresh LND balance
+      _lndBalance = await _lndService.getBalance();
+      notifyListeners();
+
+      SecureLogger.info(
+        'Payment sent via LND: ${result.amountSat} sats (fee: ${result.feeSat} sats)',
+        tag: 'LND',
+      );
+
+      return operation.id;
+    } catch (e) {
+      await _operationStateService.markFailed(operation.id, e.toString());
+      _error = e.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _paymentInProgress = false;
+      _setLoading(false);
+    }
+  }
+
+  /// Automatically recover stuck swaps that have been pending too long
+  /// Runs in background - doesn't block initialization
+  Future<void> _autoRecoverStuckSwaps() async {
+    try {
+      final refundables = await _lightningService.listRefundables();
+      if (refundables.isEmpty) return;
+
+      SecureLogger.info(
+        'Found ${refundables.length} refundable swap(s), attempting auto-recovery',
+        tag: 'Wallet',
+      );
+
+      for (final swap in refundables) {
+        try {
+          // Get a refund address
+          final refundAddress = await _lightningService.getOnChainAddress();
+
+          // Get recommended fees (use economy for auto-refunds)
+          final fees = await _lightningService.getRecommendedFees();
+
+          // Process refund
+          await _lightningService.refundSwap(
+            swapAddress: swap.swapAddress,
+            refundAddress: refundAddress,
+            feeRateSatPerVbyte: fees.hourFee.toInt(), // Use slower fee for auto
+          );
+
+          SecureLogger.info(
+            'Auto-refund initiated for ${swap.amountSat} sats',
+            tag: 'Wallet',
+          );
+
+          // Show notification
+          NotificationService.instance;
+        } catch (e) {
+          SecureLogger.error(
+            'Auto-refund failed for swap ${swap.swapAddress}',
+            error: e,
+            tag: 'Wallet',
+          );
+        }
+      }
+
+      // Refresh to show updated balance
+      await _refreshAll();
+    } catch (e) {
+      // Don't fail silently but don't crash either
+      SecureLogger.error('Auto-recovery check failed', error: e, tag: 'Wallet');
     }
   }
 
@@ -428,6 +635,9 @@ class WalletProvider extends ChangeNotifier {
     _setLoading(true);
     await _refreshAll();
     _setLoading(false);
+
+    // Check for stuck swaps on every refresh
+    _autoRecoverStuckSwaps();
   }
 
   Future<void> _refreshAll() async {
@@ -505,6 +715,32 @@ class WalletProvider extends ChangeNotifier {
       _error = e.toString();
       notifyListeners();
       return null;
+    }
+  }
+
+  /// Generate BOLT11 invoice (one-time use, works with all Lightning wallets)
+  Future<String?> generateBolt11Invoice({
+    required BigInt amountSat,
+    String? description,
+  }) async {
+    if (!_isInitialized || _activeWallet == null) return null;
+
+    _setLoading(true);
+    _error = null;
+
+    try {
+      final invoice = await _lightningService.generateBolt11Invoice(
+        amountSat: amountSat,
+        description: description,
+      );
+      notifyListeners();
+      return invoice;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _setLoading(false);
     }
   }
 
@@ -667,6 +903,7 @@ class WalletProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    NotificationService.instance.unsubscribe();
     _lightningService.disconnect();
     super.dispose();
   }

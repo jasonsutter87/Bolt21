@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
@@ -102,14 +103,30 @@ class _SendScreenState extends State<SendScreen> {
       }
     }
 
-    // Use idempotent method to prevent double-spend on rapid taps
-    // Returns operation ID on success, null on failure
-    final operationId = await wallet.sendPaymentIdempotent(input, amountSat: amountSat);
+    // Check if this should route via LND (BOLT11 when LND connected)
+    final useLnd = wallet.shouldUseLndForDestination(input);
+
+    String? operationId;
+    String successMessage = 'Payment sent!';
+
+    if (useLnd) {
+      // Route via user's LND node for near-zero fees
+      operationId = await wallet.sendPaymentViaLnd(
+        input,
+        amountSat: amountSat?.toInt(),
+      );
+      successMessage = 'Payment sent via ${wallet.lndNodeInfo?.alias ?? "your node"}!';
+      // Haptic feedback for LND payment
+      HapticFeedback.mediumImpact();
+    } else {
+      // Use Breez SDK (for BOLT12, on-chain, Lightning Address, etc.)
+      operationId = await wallet.sendPaymentIdempotent(input, amountSat: amountSat);
+    }
 
     if (operationId != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Payment sent!'),
+        SnackBar(
+          content: Text(successMessage),
           backgroundColor: Bolt21Theme.success,
         ),
       );
@@ -250,30 +267,61 @@ class _SendScreenState extends State<SendScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Payment type indicator
+            // Payment type indicator with LND badge
             if (_paymentType != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Bolt21Theme.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Bolt21Theme.orange.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _paymentType == 'On-chain' ? Icons.link : Icons.bolt,
-                      size: 16,
-                      color: Bolt21Theme.orange,
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Bolt21Theme.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Bolt21Theme.orange.withValues(alpha: 0.3)),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _paymentType!,
-                      style: const TextStyle(color: Bolt21Theme.orange),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _paymentType == 'On-chain' ? Icons.link : Icons.bolt,
+                          size: 16,
+                          color: Bolt21Theme.orange,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _paymentType!,
+                          style: const TextStyle(color: Bolt21Theme.orange),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  // Show "via Your Node" badge when LND will be used
+                  if (_paymentType == 'BOLT11 Invoice' && wallet.isLndConnected)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Bolt21Theme.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Bolt21Theme.success.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.router,
+                            size: 16,
+                            color: Bolt21Theme.success,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'via ${wallet.lndNodeInfo?.alias ?? "Your Node"}',
+                            style: const TextStyle(color: Bolt21Theme.success),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             const SizedBox(height: 24),
 
@@ -311,11 +359,29 @@ class _SendScreenState extends State<SendScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Balance info
+            // Balance info - show LND balance for BOLT11 when connected
             Center(
-              child: Text(
-                'Available: ${wallet.totalBalanceSats} sats',
-                style: const TextStyle(color: Bolt21Theme.textSecondary),
+              child: Column(
+                children: [
+                  if (_paymentType == 'BOLT11 Invoice' && wallet.isLndConnected) ...[
+                    Text(
+                      'LND Spendable: ${wallet.lndBalance?.spendableBalance ?? 0} sats',
+                      style: const TextStyle(color: Bolt21Theme.success),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Breez: ${wallet.totalBalanceSats} sats',
+                      style: const TextStyle(
+                        color: Bolt21Theme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ] else
+                    Text(
+                      'Available: ${wallet.totalBalanceSats} sats',
+                      style: const TextStyle(color: Bolt21Theme.textSecondary),
+                    ),
+                ],
               ),
             ),
           ],

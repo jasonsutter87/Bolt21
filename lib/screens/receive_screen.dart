@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart' show SharePlus, ShareParams;
 import '../providers/wallet_provider.dart';
+import '../services/screenshot_service.dart';
 import '../utils/theme.dart';
 
 class ReceiveScreen extends StatefulWidget {
@@ -20,11 +21,15 @@ class _ReceiveScreenState extends State<ReceiveScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    // SECURITY: Allow screenshots on this screen so users can share QR codes
+    ScreenshotService.allowScreenshots();
   }
 
   @override
   void dispose() {
+    // SECURITY: Re-enable screenshot protection when leaving
+    ScreenshotService.blockScreenshots();
     _tabController.dispose();
     super.dispose();
   }
@@ -40,7 +45,8 @@ class _ReceiveScreenState extends State<ReceiveScreen>
           labelColor: Bolt21Theme.orange,
           unselectedLabelColor: Bolt21Theme.textSecondary,
           tabs: const [
-            Tab(text: 'BOLT12 Offer'),
+            Tab(text: 'Invoice'),
+            Tab(text: 'BOLT12'),
             Tab(text: 'On-chain'),
           ],
         ),
@@ -48,11 +54,331 @@ class _ReceiveScreenState extends State<ReceiveScreen>
       body: TabBarView(
         controller: _tabController,
         children: const [
+          _Bolt11Tab(),
           _Bolt12Tab(),
           _OnChainTab(),
         ],
       ),
     );
+  }
+}
+
+/// BOLT11 Invoice tab - one-time use, works with all Lightning wallets
+class _Bolt11Tab extends StatefulWidget {
+  const _Bolt11Tab();
+
+  @override
+  State<_Bolt11Tab> createState() => _Bolt11TabState();
+}
+
+class _Bolt11TabState extends State<_Bolt11Tab> {
+  final _amountController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  String? _invoice;
+  bool _isGenerating = false;
+  bool _useLnd = false; // Whether to generate invoice via LND
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _generateInvoice() async {
+    final amountText = _amountController.text.trim();
+    if (amountText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter an amount'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+      return;
+    }
+
+    final amount = int.tryParse(amountText);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid amount'),
+          backgroundColor: Bolt21Theme.error,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isGenerating = true);
+
+    final wallet = context.read<WalletProvider>();
+    String? invoice;
+
+    if (_useLnd && wallet.isLndConnected) {
+      // Generate invoice via user's LND node
+      try {
+        invoice = await wallet.lndService.createInvoice(
+          amountSat: amount,
+          memo: _descriptionController.text.trim().isNotEmpty
+              ? _descriptionController.text.trim()
+              : null,
+        );
+        // Refresh LND balance after invoice generation
+        await wallet.refreshLndConnection();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('LND Error: $e'),
+              backgroundColor: Bolt21Theme.error,
+            ),
+          );
+        }
+      }
+    } else {
+      // Generate via Breez SDK
+      invoice = await wallet.generateBolt11Invoice(
+        amountSat: BigInt.from(amount),
+        description: _descriptionController.text.trim().isNotEmpty
+            ? _descriptionController.text.trim()
+            : null,
+      );
+    }
+
+    setState(() {
+      _isGenerating = false;
+      _invoice = invoice;
+    });
+
+    if (invoice == null && wallet.error != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${wallet.error}'),
+            backgroundColor: Bolt21Theme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _resetInvoice() {
+    setState(() {
+      _invoice = null;
+      _amountController.clear();
+      _descriptionController.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<WalletProvider>(
+      builder: (context, wallet, child) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.receipt_long,
+                size: 48,
+                color: Bolt21Theme.orange,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Lightning Invoice',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _useLnd && wallet.isLndConnected
+                    ? 'Receive to ${wallet.lndNodeInfo?.alias ?? "your node"}'
+                    : 'One-time invoice. Works with all Lightning wallets.',
+                style: const TextStyle(color: Bolt21Theme.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+
+              if (_invoice == null) ...[
+                // LND toggle when connected
+                if (wallet.isLndConnected) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _useLnd
+                          ? Bolt21Theme.success.withValues(alpha: 0.1)
+                          : Bolt21Theme.darkBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _useLnd
+                            ? Bolt21Theme.success.withValues(alpha: 0.3)
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.router,
+                          color: _useLnd
+                              ? Bolt21Theme.success
+                              : Bolt21Theme.textSecondary,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Receive via ${wallet.lndNodeInfo?.alias ?? "Your Node"}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: _useLnd
+                                      ? Bolt21Theme.success
+                                      : Bolt21Theme.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                _useLnd
+                                    ? 'Inbound: ${_formatSats(wallet.lndBalance?.channelRemote ?? 0)} sats'
+                                    : 'Use your own Lightning channels',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _useLnd
+                                      ? Bolt21Theme.success.withValues(alpha: 0.8)
+                                      : Bolt21Theme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: _useLnd,
+                          onChanged: (v) => setState(() => _useLnd = v),
+                          activeColor: Bolt21Theme.success,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                // Amount input
+                TextField(
+                  controller: _amountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Amount (sats)',
+                    hintText: 'e.g., 10000',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.bolt),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Description input
+                TextField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Description (optional)',
+                    hintText: 'e.g., Payment for coffee',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.note_alt_outlined),
+                  ),
+                  maxLength: 100,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _isGenerating ? null : _generateInvoice,
+                    style: _useLnd && wallet.isLndConnected
+                        ? ElevatedButton.styleFrom(
+                            backgroundColor: Bolt21Theme.success,
+                          )
+                        : null,
+                    child: _isGenerating
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            _useLnd && wallet.isLndConnected
+                                ? 'Generate via ${wallet.lndNodeInfo?.alias ?? "LND"}'
+                                : 'Generate Invoice',
+                          ),
+                  ),
+                ),
+              ] else ...[
+                // Show generated invoice
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _useLnd
+                        ? Bolt21Theme.success.withValues(alpha: 0.1)
+                        : Bolt21Theme.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _useLnd
+                          ? Bolt21Theme.success.withValues(alpha: 0.3)
+                          : Bolt21Theme.orange.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _useLnd ? Icons.router : Icons.bolt,
+                        color: _useLnd ? Bolt21Theme.success : Bolt21Theme.orange,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${_amountController.text} sats',
+                        style: TextStyle(
+                          color: _useLnd ? Bolt21Theme.success : Bolt21Theme.orange,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      if (_useLnd) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          'via ${wallet.lndNodeInfo?.alias ?? "LND"}',
+                          style: TextStyle(
+                            color: Bolt21Theme.success.withValues(alpha: 0.7),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _QrCard(
+                  data: _invoice!,
+                  label: 'Scan to pay',
+                ),
+                const SizedBox(height: 16),
+                _ActionButtons(data: _invoice!),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _resetInvoice,
+                  child: const Text('Generate New Invoice'),
+                ),
+                const SizedBox(height: 50),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatSats(int sats) {
+    if (sats >= 1000000) {
+      return '${(sats / 1000000).toStringAsFixed(2)}M';
+    } else if (sats >= 1000) {
+      return '${(sats / 1000).toStringAsFixed(1)}k';
+    }
+    return sats.toString();
   }
 }
 
