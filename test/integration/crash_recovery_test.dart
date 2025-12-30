@@ -14,6 +14,9 @@ class MockPathProviderPlatform extends Fake
   Future<String?> getApplicationDocumentsPath() async => testDir;
 }
 
+// Test wallet ID used for all operations in these tests
+const String testWalletId = 'test-wallet-recovery';
+
 void main() {
   late Directory tempDir;
 
@@ -38,6 +41,7 @@ void main() {
         // Simulate: User initiates send, operation created, marked preparing
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc1234...',
           amountSat: 5000,
         );
@@ -68,6 +72,7 @@ void main() {
         // Simulate: Payment prepare succeeded, now executing
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc5678...',
           amountSat: 10000,
         );
@@ -97,6 +102,7 @@ void main() {
         // before marking complete
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc...',
           amountSat: 2000,
         );
@@ -124,6 +130,7 @@ void main() {
         // Simulate: Multiple sends started, all crashed mid-way
         final op1 = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'dest1',
           amountSat: 1000,
         );
@@ -131,6 +138,7 @@ void main() {
 
         final op2 = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'dest2',
           amountSat: 2000,
         );
@@ -138,6 +146,7 @@ void main() {
 
         final op3 = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'dest3',
           amountSat: 3000,
         );
@@ -159,6 +168,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.receiveBolt12,
+          walletId: testWalletId,
         );
         await service.markExecuting(op.id);
 
@@ -182,6 +192,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.receiveOnchain,
+          walletId: testWalletId,
         );
         await service.markExecuting(op.id);
 
@@ -203,6 +214,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.receiveBolt11,
+          walletId: testWalletId,
           amountSat: 50000,
         );
         await service.markExecuting(op.id);
@@ -237,10 +249,10 @@ void main() {
         await service.initialize();
 
         // Create some operations
-        final op1 = await service.createOperation(type: OperationType.send);
+        final op1 = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op1.id);
 
-        final op2 = await service.createOperation(type: OperationType.send);
+        final op2 = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markExecuting(op2.id);
 
         // Crash 1
@@ -249,7 +261,7 @@ void main() {
         expect(service2.getAllOperations().length, equals(2));
 
         // Add more operations
-        final op3 = await service2.createOperation(type: OperationType.receiveBolt12);
+        final op3 = await service2.createOperation(type: OperationType.receiveBolt12, walletId: testWalletId);
 
         // Crash 2
         final service3 = OperationStateService();
@@ -271,6 +283,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc...',
           amountSat: 1000,
         );
@@ -280,7 +293,7 @@ void main() {
         for (var i = 0; i < 5; i++) {
           final newService = OperationStateService();
           await newService.initialize();
-          expect(newService.getIncompleteOperations().length, equals(1));
+          expect(newService.getIncompleteOperations(walletId: testWalletId).length, equals(1));
         }
       });
 
@@ -290,6 +303,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'important_dest',
           amountSat: 99999,
           metadata: {'note': 'Ocean payout'},
@@ -312,13 +326,13 @@ void main() {
         final service = OperationStateService();
         await service.initialize();
 
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op.id, txId: 'tx_abc');
 
         final recoveredService = OperationStateService();
         await recoveredService.initialize();
 
-        expect(recoveredService.getIncompleteOperations(), isEmpty);
+        expect(recoveredService.getIncompleteOperations(walletId: testWalletId), isEmpty);
         expect(recoveredService.getOperation(op.id)!.txId, equals('tx_abc'));
       });
 
@@ -326,13 +340,13 @@ void main() {
         final service = OperationStateService();
         await service.initialize();
 
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markFailed(op.id, 'Insufficient funds');
 
         final recoveredService = OperationStateService();
         await recoveredService.initialize();
 
-        expect(recoveredService.getIncompleteOperations(), isEmpty);
+        expect(recoveredService.getIncompleteOperations(walletId: testWalletId), isEmpty);
         expect(recoveredService.getOperation(op.id)!.error, equals('Insufficient funds'));
       });
     });
@@ -346,6 +360,7 @@ void main() {
         // First send started but not completed
         final op1 = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc_same_dest',
           amountSat: 5000,
         );
@@ -368,12 +383,14 @@ void main() {
 
         await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc_dest',
           amountSat: 1000,
         );
 
         await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc_dest',
           amountSat: 2000,
         );
@@ -388,6 +405,7 @@ void main() {
 
         final op1 = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc_dest',
           amountSat: 1000,
         );
@@ -413,7 +431,7 @@ void main() {
           await service.initialize();
 
           for (var j = 0; j < 10; j++) {
-            final op = await service.createOperation(type: OperationType.send);
+            final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
             expect(ids.contains(op.id), isFalse, reason: 'Duplicate ID: ${op.id}');
             ids.add(op.id);
           }
@@ -427,7 +445,7 @@ void main() {
         await service.initialize();
 
         final startTime = DateTime.now();
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op.id);
         final completeTime = DateTime.now();
 
@@ -450,6 +468,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           metadata: largeMetadata,
         );
 
@@ -472,6 +491,7 @@ void main() {
         final futures = List.generate(50, (i) =>
           service.createOperation(
             type: OperationType.send,
+            walletId: testWalletId,
             destination: 'rapid_$i',
           )
         );
@@ -491,6 +511,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: longDest,
         );
 
@@ -506,6 +527,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           amountSat: 2100000000000000, // 21M BTC in sats
         );
 
@@ -521,6 +543,7 @@ void main() {
 
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           metadata: {
             'note': 'Payment with "quotes" and \'apostrophes\'',
             'unicode': '🔥💰⚡',

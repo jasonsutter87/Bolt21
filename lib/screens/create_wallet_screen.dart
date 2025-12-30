@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
 import '../utils/theme.dart';
 import '../utils/secure_clipboard.dart';
+import '../utils/secure_string.dart';
 import 'home_screen.dart';
 
 class CreateWalletScreen extends StatefulWidget {
@@ -16,7 +17,8 @@ class CreateWalletScreen extends StatefulWidget {
 }
 
 class _CreateWalletScreenState extends State<CreateWalletScreen> {
-  String? _mnemonic;
+  // SECURITY: Use SecureString to enable memory wiping on disposal
+  SecureString? _mnemonic;
   bool _isLoading = true;
   bool _backedUp = false;
   bool _showWords = false;
@@ -42,7 +44,8 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
 
   @override
   void dispose() {
-    // SECURITY: Clear mnemonic from memory when leaving screen
+    // SECURITY: Securely wipe mnemonic from memory (triple-overwrite pattern)
+    _mnemonic?.dispose();
     _mnemonic = null;
     _nameController.dispose();
     super.dispose();
@@ -52,7 +55,8 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
     final wallet = context.read<WalletProvider>();
     final mnemonic = wallet.generateMnemonic();
     setState(() {
-      _mnemonic = mnemonic;
+      // SECURITY: Store mnemonic as SecureString for memory wiping
+      _mnemonic = SecureString.fromString(mnemonic);
       _isLoading = false;
     });
   }
@@ -72,7 +76,7 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
   }
 
   Future<void> _createWallet() async {
-    if (_mnemonic == null) return;
+    if (_mnemonic == null || _mnemonic!.isDisposed) return;
 
     setState(() => _isLoading = true);
 
@@ -82,10 +86,12 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
       final isFirstWallet = wallet.wallets.isEmpty;
 
       // Use importWallet since we already have the mnemonic
-      await wallet.importWallet(name: name, mnemonic: _mnemonic!);
+      // SECURITY: Access mnemonic.value only when needed (minimizes String exposure)
+      await wallet.importWallet(name: name, mnemonic: _mnemonic!.value);
 
-      // SECURITY: Clear mnemonic from UI state after successful storage
+      // SECURITY: Securely wipe mnemonic from memory after successful storage
       if (mounted) {
+        _mnemonic?.dispose();
         setState(() => _mnemonic = null);
       }
 
@@ -186,7 +192,7 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
   }
 
   Widget _buildSeedPhraseStep() {
-    final words = _mnemonic?.split(' ') ?? [];
+    final words = _mnemonic?.value.split(' ') ?? [];
 
     return Scaffold(
       appBar: AppBar(
@@ -307,7 +313,7 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
                           onPressed: () async {
                             await SecureClipboard.copyWithTimeout(
                               context,
-                              _mnemonic ?? '',
+                              _mnemonic?.value ?? '',
                               timeout: const Duration(seconds: 30),
                             );
                           },

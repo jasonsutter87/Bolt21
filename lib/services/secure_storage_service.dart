@@ -1,5 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/wallet_metadata.dart';
+import '../utils/encryption_helper.dart';
+import '../utils/secure_logger.dart';
 
 /// Secure storage for sensitive wallet data
 ///
@@ -7,7 +9,11 @@ import '../models/wallet_metadata.dart';
 /// - Android: Encrypted shared preferences with hardware-backed keystore
 /// - iOS: Keychain with accessibility restricted to when device is unlocked,
 ///        explicitly disabled iCloud backup to prevent cloud sync of secrets
+/// - Wallet metadata is encrypted with AES-256-GCM before storage
 class SecureStorageService {
+  // Encryption helper for wallet metadata (defense in depth)
+  static EncryptionHelper? _walletListEncryption;
+  static bool _isInitialized = false;
   static const _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(
       encryptedSharedPreferences: true,  // Use EncryptedSharedPreferences
@@ -36,22 +42,65 @@ class SecureStorageService {
   static String _bolt12OfferKey(String walletId) => 'bolt21_bolt12_$walletId';
 
   // ============================================
+  // INITIALIZATION
+  // ============================================
+
+  /// Initialize encryption for wallet metadata
+  /// Call this before accessing wallet data
+  static Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    _walletListEncryption = EncryptionHelper(keyName: 'wallet_list');
+    await _walletListEncryption!.initialize();
+    _isInitialized = true;
+  }
+
+  /// Ensure encryption is initialized
+  static Future<void> _ensureInitialized() async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+  }
+
+  // ============================================
   // MULTI-WALLET MANAGEMENT
   // ============================================
 
   /// Get list of all wallets
+  /// SECURITY: Wallet metadata is encrypted with AES-256-GCM
   static Future<List<WalletMetadata>> getWalletList() async {
-    final json = await _storage.read(key: _walletListKey);
-    if (json == null || json.isEmpty) return [];
-    return WalletMetadata.decodeList(json);
+    await _ensureInitialized();
+
+    final encryptedData = await _storage.read(key: _walletListKey);
+    if (encryptedData == null || encryptedData.isEmpty) return [];
+
+    try {
+      // Check if data is encrypted (migration support)
+      if (EncryptionHelper.isEncrypted(encryptedData)) {
+        final json = await _walletListEncryption!.decrypt(encryptedData);
+        return WalletMetadata.decodeList(json);
+      } else {
+        // Legacy unencrypted data - migrate on next save
+        SecureLogger.info('Migrating unencrypted wallet list to encrypted format', tag: 'Storage');
+        final wallets = WalletMetadata.decodeList(encryptedData);
+        // Re-save encrypted
+        await saveWalletList(wallets);
+        return wallets;
+      }
+    } catch (e) {
+      SecureLogger.error('Failed to decrypt wallet list', error: e, tag: 'Storage');
+      return [];
+    }
   }
 
   /// Save wallet list
+  /// SECURITY: Wallet metadata is encrypted with AES-256-GCM
   static Future<void> saveWalletList(List<WalletMetadata> wallets) async {
-    await _storage.write(
-      key: _walletListKey,
-      value: WalletMetadata.encodeList(wallets),
-    );
+    await _ensureInitialized();
+
+    final json = WalletMetadata.encodeList(wallets);
+    final encrypted = await _walletListEncryption!.encrypt(json);
+    await _storage.write(key: _walletListKey, value: encrypted);
   }
 
   /// Get active wallet ID

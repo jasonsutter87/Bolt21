@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bolt21/services/operation_state_service.dart';
@@ -14,6 +13,9 @@ class MockPathProviderPlatform extends Fake
   @override
   Future<String?> getApplicationDocumentsPath() async => testDir;
 }
+
+// Test wallet ID used for all operations in these tests
+const String testWalletId = 'test-wallet-unit';
 
 void main() {
   late OperationStateService service;
@@ -40,14 +42,14 @@ void main() {
       });
 
       test('creates state file on first operation', () async {
-        await service.createOperation(type: OperationType.send);
+        await service.createOperation(type: OperationType.send, walletId: testWalletId);
         final file = File('${tempDir.path}/operation_state.json');
         expect(await file.exists(), isTrue);
       });
 
       test('loads existing operations on initialize', () async {
-        await service.createOperation(type: OperationType.send, destination: 'test1');
-        await service.createOperation(type: OperationType.send, destination: 'test2');
+        await service.createOperation(type: OperationType.send, walletId: testWalletId, destination: 'test1');
+        await service.createOperation(type: OperationType.send, walletId: testWalletId, destination: 'test2');
 
         final newService = OperationStateService();
         await newService.initialize();
@@ -101,29 +103,30 @@ void main() {
     // ==================== CREATE OPERATION TESTS ====================
     group('createOperation', () {
       test('creates send operation', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         expect(op.type, equals(OperationType.send));
         expect(op.status, equals(OperationStatus.pending));
       });
 
       test('creates receiveBolt12 operation', () async {
-        final op = await service.createOperation(type: OperationType.receiveBolt12);
+        final op = await service.createOperation(type: OperationType.receiveBolt12, walletId: testWalletId);
         expect(op.type, equals(OperationType.receiveBolt12));
       });
 
       test('creates receiveOnchain operation', () async {
-        final op = await service.createOperation(type: OperationType.receiveOnchain);
+        final op = await service.createOperation(type: OperationType.receiveOnchain, walletId: testWalletId);
         expect(op.type, equals(OperationType.receiveOnchain));
       });
 
       test('creates receiveBolt11 operation', () async {
-        final op = await service.createOperation(type: OperationType.receiveBolt11);
+        final op = await service.createOperation(type: OperationType.receiveBolt11, walletId: testWalletId);
         expect(op.type, equals(OperationType.receiveBolt11));
       });
 
       test('sets destination correctly', () async {
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc1234...',
         );
         expect(op.destination, equals('lnbc1234...'));
@@ -132,6 +135,7 @@ void main() {
       test('sets amountSat correctly', () async {
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           amountSat: 50000,
         );
         expect(op.amountSat, equals(50000));
@@ -140,6 +144,7 @@ void main() {
       test('sets metadata correctly', () async {
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           metadata: {'note': 'Test payment', 'source': 'unit_test'},
         );
         expect(op.metadata?['note'], equals('Test payment'));
@@ -149,7 +154,7 @@ void main() {
       test('generates unique IDs for each operation', () async {
         final ids = <String>{};
         for (var i = 0; i < 100; i++) {
-          final op = await service.createOperation(type: OperationType.send);
+          final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
           expect(ids.contains(op.id), isFalse, reason: 'Duplicate ID: ${op.id}');
           ids.add(op.id);
         }
@@ -157,7 +162,7 @@ void main() {
 
       test('sets startedAt to current time', () async {
         final before = DateTime.now();
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         final after = DateTime.now();
 
         expect(op.startedAt.isAfter(before.subtract(const Duration(seconds: 1))), isTrue);
@@ -165,22 +170,22 @@ void main() {
       });
 
       test('completedAt is null on creation', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         expect(op.completedAt, isNull);
       });
 
       test('error is null on creation', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         expect(op.error, isNull);
       });
 
       test('txId is null on creation', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         expect(op.txId, isNull);
       });
 
       test('persists operation immediately', () async {
-        await service.createOperation(type: OperationType.send, destination: 'immediate_test');
+        await service.createOperation(type: OperationType.send, walletId: testWalletId, destination: 'immediate_test');
 
         final newService = OperationStateService();
         await newService.initialize();
@@ -189,7 +194,7 @@ void main() {
 
       test('handles concurrent creates', () async {
         final futures = List.generate(10, (i) =>
-          service.createOperation(type: OperationType.send, destination: 'concurrent_$i')
+          service.createOperation(type: OperationType.send, walletId: testWalletId, destination: 'concurrent_$i')
         );
         await Future.wait(futures);
 
@@ -200,7 +205,7 @@ void main() {
     // ==================== STATUS UPDATE TESTS ====================
     group('markPreparing', () {
       test('updates status to preparing', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markPreparing(op.id);
 
         final updated = service.getOperation(op.id);
@@ -208,7 +213,7 @@ void main() {
       });
 
       test('persists status change', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markPreparing(op.id);
 
         final newService = OperationStateService();
@@ -224,14 +229,14 @@ void main() {
 
     group('markExecuting', () {
       test('updates status to executing', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markExecuting(op.id);
 
         expect(service.getOperation(op.id)?.status, equals(OperationStatus.executing));
       });
 
       test('can transition from preparing to executing', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markPreparing(op.id);
         await service.markExecuting(op.id);
 
@@ -241,14 +246,14 @@ void main() {
 
     group('markCompleted', () {
       test('updates status to completed', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op.id);
 
         expect(service.getOperation(op.id)?.status, equals(OperationStatus.completed));
       });
 
       test('sets completedAt timestamp', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         final before = DateTime.now();
         await service.markCompleted(op.id);
         final after = DateTime.now();
@@ -260,14 +265,14 @@ void main() {
       });
 
       test('sets txId when provided', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op.id, txId: 'tx_abc123');
 
         expect(service.getOperation(op.id)?.txId, equals('tx_abc123'));
       });
 
       test('txId is null when not provided', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op.id);
 
         expect(service.getOperation(op.id)?.txId, isNull);
@@ -276,21 +281,21 @@ void main() {
 
     group('markFailed', () {
       test('updates status to failed', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markFailed(op.id, 'Network error');
 
         expect(service.getOperation(op.id)?.status, equals(OperationStatus.failed));
       });
 
       test('sets error message', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markFailed(op.id, 'Connection timeout');
 
         expect(service.getOperation(op.id)?.error, equals('Connection timeout'));
       });
 
       test('sets completedAt timestamp', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markFailed(op.id, 'Error');
 
         expect(service.getOperation(op.id)?.completedAt, isNotNull);
@@ -299,6 +304,7 @@ void main() {
       test('preserves existing data on failure', () async {
         final op = await service.createOperation(
           type: OperationType.send,
+          walletId: testWalletId,
           destination: 'lnbc...',
           amountSat: 1000,
         );
@@ -312,14 +318,14 @@ void main() {
 
     group('markUnknown', () {
       test('updates status to unknown', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markUnknown(op.id);
 
         expect(service.getOperation(op.id)?.status, equals(OperationStatus.unknown));
       });
 
       test('used for interrupted operations', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markExecuting(op.id);
         await service.markUnknown(op.id);
 
@@ -330,7 +336,7 @@ void main() {
     // ==================== QUERY TESTS ====================
     group('getOperation', () {
       test('returns operation by ID', () async {
-        final op = await service.createOperation(type: OperationType.send, destination: 'find_me');
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId, destination: 'find_me');
         final found = service.getOperation(op.id);
 
         expect(found, isNotNull);
@@ -344,7 +350,7 @@ void main() {
 
       test('finds correct operation among many', () async {
         for (var i = 0; i < 100; i++) {
-          await service.createOperation(type: OperationType.send, destination: 'op_$i');
+          await service.createOperation(type: OperationType.send, walletId: testWalletId, destination: 'op_$i');
         }
 
         final target = service.getAllOperations()[50];
@@ -360,15 +366,15 @@ void main() {
       });
 
       test('returns all operations', () async {
-        await service.createOperation(type: OperationType.send);
-        await service.createOperation(type: OperationType.receiveBolt12);
-        await service.createOperation(type: OperationType.receiveOnchain);
+        await service.createOperation(type: OperationType.send, walletId: testWalletId);
+        await service.createOperation(type: OperationType.receiveBolt12, walletId: testWalletId);
+        await service.createOperation(type: OperationType.receiveOnchain, walletId: testWalletId);
 
         expect(service.getAllOperations().length, equals(3));
       });
 
       test('returns unmodifiable list', () async {
-        await service.createOperation(type: OperationType.send);
+        await service.createOperation(type: OperationType.send, walletId: testWalletId);
         final operations = service.getAllOperations();
 
         // This should not affect the internal list
@@ -383,47 +389,47 @@ void main() {
 
     group('getIncompleteOperations', () {
       test('returns pending operations', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         expect(service.getIncompleteOperations().map((o) => o.id), contains(op.id));
       });
 
       test('returns preparing operations', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markPreparing(op.id);
         expect(service.getIncompleteOperations().map((o) => o.id), contains(op.id));
       });
 
       test('returns executing operations', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markExecuting(op.id);
         expect(service.getIncompleteOperations().map((o) => o.id), contains(op.id));
       });
 
       test('returns unknown operations', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markUnknown(op.id);
         expect(service.getIncompleteOperations().map((o) => o.id), contains(op.id));
       });
 
       test('excludes completed operations', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op.id);
         expect(service.getIncompleteOperations().map((o) => o.id), isNot(contains(op.id)));
       });
 
       test('excludes failed operations', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markFailed(op.id, 'Error');
         expect(service.getIncompleteOperations().map((o) => o.id), isNot(contains(op.id)));
       });
 
       test('filters correctly with mixed statuses', () async {
-        final pending = await service.createOperation(type: OperationType.send);
-        final preparing = await service.createOperation(type: OperationType.send);
-        final executing = await service.createOperation(type: OperationType.send);
-        final completed = await service.createOperation(type: OperationType.send);
-        final failed = await service.createOperation(type: OperationType.send);
-        final unknown = await service.createOperation(type: OperationType.send);
+        final pending = await service.createOperation(type: OperationType.send, walletId: testWalletId);
+        final preparing = await service.createOperation(type: OperationType.send, walletId: testWalletId);
+        final executing = await service.createOperation(type: OperationType.send, walletId: testWalletId);
+        final completed = await service.createOperation(type: OperationType.send, walletId: testWalletId);
+        final failed = await service.createOperation(type: OperationType.send, walletId: testWalletId);
+        final unknown = await service.createOperation(type: OperationType.send, walletId: testWalletId);
 
         await service.markPreparing(preparing.id);
         await service.markExecuting(executing.id);
@@ -442,10 +448,10 @@ void main() {
 
     group('getIncompleteSends', () {
       test('returns only send operations', () async {
-        await service.createOperation(type: OperationType.send);
-        await service.createOperation(type: OperationType.receiveBolt12);
-        await service.createOperation(type: OperationType.receiveOnchain);
-        await service.createOperation(type: OperationType.receiveBolt11);
+        await service.createOperation(type: OperationType.send, walletId: testWalletId);
+        await service.createOperation(type: OperationType.receiveBolt12, walletId: testWalletId);
+        await service.createOperation(type: OperationType.receiveOnchain, walletId: testWalletId);
+        await service.createOperation(type: OperationType.receiveBolt11, walletId: testWalletId);
 
         final sends = service.getIncompleteSends();
         expect(sends.length, equals(1));
@@ -453,14 +459,14 @@ void main() {
       });
 
       test('excludes completed sends', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op.id);
 
         expect(service.getIncompleteSends(), isEmpty);
       });
 
       test('includes executing sends', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markExecuting(op.id);
 
         expect(service.getIncompleteSends().length, equals(1));
@@ -470,7 +476,7 @@ void main() {
     // ==================== REMOVAL TESTS ====================
     group('removeOperation', () {
       test('removes operation by ID', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         expect(service.getAllOperations().length, equals(1));
 
         await service.removeOperation(op.id);
@@ -478,7 +484,7 @@ void main() {
       });
 
       test('persists removal', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.removeOperation(op.id);
 
         final newService = OperationStateService();
@@ -487,7 +493,7 @@ void main() {
       });
 
       test('does nothing for non-existent ID', () async {
-        await service.createOperation(type: OperationType.send);
+        await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.removeOperation('non_existent');
         expect(service.getAllOperations().length, equals(1));
       });
@@ -495,7 +501,7 @@ void main() {
       test('removes correct operation among many', () async {
         final ops = <OperationState>[];
         for (var i = 0; i < 10; i++) {
-          ops.add(await service.createOperation(type: OperationType.send, destination: 'op_$i'));
+          ops.add(await service.createOperation(type: OperationType.send, walletId: testWalletId, destination: 'op_$i'));
         }
 
         await service.removeOperation(ops[5].id);
@@ -510,7 +516,7 @@ void main() {
     group('clearAll', () {
       test('removes all operations', () async {
         for (var i = 0; i < 10; i++) {
-          await service.createOperation(type: OperationType.send);
+          await service.createOperation(type: OperationType.send, walletId: testWalletId);
         }
         expect(service.getAllOperations().length, equals(10));
 
@@ -519,7 +525,7 @@ void main() {
       });
 
       test('persists clear', () async {
-        await service.createOperation(type: OperationType.send);
+        await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.clearAll();
 
         final newService = OperationStateService();
@@ -530,7 +536,7 @@ void main() {
 
     group('cleanupOldOperations', () {
       test('removes old completed operations', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markCompleted(op.id);
 
         // Manually set completedAt to old date
@@ -545,7 +551,7 @@ void main() {
       });
 
       test('keeps incomplete operations regardless of age', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
         await service.markExecuting(op.id);
 
         await service.cleanupOldOperations(maxAge: Duration.zero);
@@ -811,6 +817,7 @@ void main() {
         for (var i = 0; i < 100; i++) {
           await service.createOperation(
             type: OperationType.send,
+            walletId: testWalletId,
             destination: 'dest_$i',
             amountSat: i * 100,
           );
@@ -823,7 +830,7 @@ void main() {
       });
 
       test('handles rapid status updates', () async {
-        final op = await service.createOperation(type: OperationType.send);
+        final op = await service.createOperation(type: OperationType.send, walletId: testWalletId);
 
         for (var i = 0; i < 50; i++) {
           await service.markPreparing(op.id);

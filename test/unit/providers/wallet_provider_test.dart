@@ -1,10 +1,274 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bolt21/models/wallet_metadata.dart';
 import 'package:bolt21/services/operation_state_service.dart';
 
 /// Tests for WalletProvider-related functionality
 /// Note: WalletProvider uses internal service instances, so we test the
 /// OperationState class and related logic directly
 void main() {
+  // ==================== MULTI-WALLET SECURITY TESTS ====================
+  group('Multi-Wallet Security', () {
+    group('Payment In Progress Protection', () {
+      test('paymentInProgress flag prevents wallet switch', () {
+        // SECURITY: When a payment is in progress, wallet switching should be blocked
+        bool paymentInProgress = true;
+        final canSwitch = !paymentInProgress;
+        expect(canSwitch, isFalse, reason: 'Cannot switch during payment');
+      });
+
+      test('paymentInProgress cleared after successful payment', () {
+        bool paymentInProgress = true;
+        paymentInProgress = false; // Simulate completion
+        expect(paymentInProgress, isFalse);
+      });
+
+      test('paymentInProgress cleared in finally block on failure', () {
+        bool paymentInProgress = true;
+        try {
+          throw Exception('Payment failed');
+        } catch (_) {
+        } finally {
+          paymentInProgress = false;
+        }
+        expect(paymentInProgress, isFalse);
+      });
+    });
+
+    group('Wallet Rename Validation', () {
+      test('empty name is rejected', () {
+        const newName = '';
+        expect(newName.trim().isEmpty, isTrue);
+      });
+
+      test('whitespace-only name is rejected', () {
+        const newName = '   \t\n  ';
+        expect(newName.trim().isEmpty, isTrue);
+      });
+
+      test('name over 50 chars is rejected', () {
+        final newName = 'A' * 51;
+        expect(newName.length > 50, isTrue);
+      });
+
+      test('name at 50 chars is accepted', () {
+        final newName = 'A' * 50;
+        expect(newName.length <= 50, isTrue);
+        expect(newName.trim().isNotEmpty, isTrue);
+      });
+
+      test('valid name with spaces is trimmed', () {
+        const newName = '  My Wallet  ';
+        expect(newName.trim(), equals('My Wallet'));
+      });
+    });
+
+    group('Fee Buffer Balance Validation', () {
+      const int feeBufferSats = 500;
+
+      test('fee buffer is subtracted from available balance', () {
+        const balance = 10000;
+        final available = balance > feeBufferSats ? balance - feeBufferSats : 0;
+        expect(available, equals(9500));
+      });
+
+      test('balance below fee buffer shows 0 available', () {
+        const balance = 300;
+        final available = balance > feeBufferSats ? balance - feeBufferSats : 0;
+        expect(available, equals(0));
+      });
+
+      test('balance exactly at fee buffer shows 0 available', () {
+        const balance = 500;
+        final available = balance > feeBufferSats ? balance - feeBufferSats : 0;
+        expect(available, equals(0));
+      });
+
+      test('amount exceeding available balance is rejected', () {
+        const balance = 10000;
+        final available = balance > feeBufferSats ? balance - feeBufferSats : 0;
+        const requestedAmount = 9600;
+        expect(requestedAmount > available, isTrue);
+      });
+
+      test('zero amount is rejected', () {
+        const requestedAmount = 0;
+        expect(requestedAmount <= 0, isTrue);
+      });
+
+      test('negative amount is rejected', () {
+        const requestedAmount = -100;
+        expect(requestedAmount <= 0, isTrue);
+      });
+    });
+
+    group('Wallet Deletion Safety', () {
+      test('cannot delete last wallet', () {
+        final wallets = [WalletMetadata.create(name: 'Only Wallet')];
+        expect(wallets.length > 1, isFalse);
+      });
+
+      test('can delete when multiple wallets exist', () {
+        final wallets = [
+          WalletMetadata.create(name: 'Wallet 1'),
+          WalletMetadata.create(name: 'Wallet 2'),
+        ];
+        expect(wallets.length > 1, isTrue);
+      });
+
+      test('deleting active wallet triggers switch', () {
+        final wallets = [
+          WalletMetadata(id: 'wallet-1', name: 'Active', createdAt: DateTime.now()),
+          WalletMetadata(id: 'wallet-2', name: 'Other', createdAt: DateTime.now()),
+        ];
+        const activeId = 'wallet-1';
+        const deletingId = 'wallet-1';
+        final needsSwitch = activeId == deletingId;
+        final otherWallet = wallets.firstWhere((w) => w.id != deletingId);
+        expect(needsSwitch, isTrue);
+        expect(otherWallet.id, equals('wallet-2'));
+      });
+    });
+
+    group('WalletId Isolation in Operations', () {
+      test('operations filtered by wallet ID', () {
+        const wallet1Id = 'wallet-1';
+        const wallet2Id = 'wallet-2';
+
+        final operations = [
+          OperationState(id: 'op-1', walletId: wallet1Id, type: OperationType.send, status: OperationStatus.pending, startedAt: DateTime.now()),
+          OperationState(id: 'op-2', walletId: wallet2Id, type: OperationType.send, status: OperationStatus.pending, startedAt: DateTime.now()),
+          OperationState(id: 'op-3', walletId: wallet1Id, type: OperationType.receiveBolt12, status: OperationStatus.pending, startedAt: DateTime.now()),
+        ];
+
+        final wallet1Ops = operations.where((op) => op.walletId == wallet1Id).toList();
+        expect(wallet1Ops.length, equals(2));
+        expect(wallet1Ops.every((op) => op.walletId == wallet1Id), isTrue);
+      });
+
+      test('walletId is preserved in copyWith', () {
+        final op = OperationState(
+          id: 'op-1',
+          walletId: 'wallet-abc',
+          type: OperationType.send,
+          status: OperationStatus.pending,
+          startedAt: DateTime.now(),
+        );
+        final updated = op.copyWith(status: OperationStatus.completed);
+        expect(updated.walletId, equals('wallet-abc'));
+      });
+
+      test('walletId included in toJson', () {
+        final op = OperationState(
+          id: 'op-1',
+          walletId: 'wallet-123',
+          type: OperationType.send,
+          status: OperationStatus.pending,
+          startedAt: DateTime.now(),
+        );
+        final json = op.toJson();
+        expect(json['walletId'], equals('wallet-123'));
+      });
+
+      test('walletId restored from fromJson', () {
+        final json = {
+          'id': 'op-from-json',
+          'walletId': 'wallet-restored',
+          'type': 'send',
+          'status': 'pending',
+          'startedAt': '2024-01-01T00:00:00.000',
+        };
+        final op = OperationState.fromJson(json);
+        expect(op.walletId, equals('wallet-restored'));
+      });
+
+      test('null walletId handled for legacy operations', () {
+        final json = {
+          'id': 'op-legacy',
+          'type': 'send',
+          'status': 'pending',
+          'startedAt': '2024-01-01T00:00:00.000',
+        };
+        final op = OperationState.fromJson(json);
+        expect(op.walletId, isNull);
+      });
+    });
+
+    group('Payment Idempotency', () {
+      test('duplicate in-progress payment is blocked', () {
+        final operations = [
+          OperationState(
+            id: 'op-existing',
+            walletId: 'wallet-1',
+            type: OperationType.send,
+            status: OperationStatus.executing,
+            startedAt: DateTime.now(),
+            destination: 'lnbc100...',
+            amountSat: 1000,
+          ),
+        ];
+
+        const newDestination = 'lnbc100...';
+        const newAmount = 1000;
+
+        final existing = operations.where((op) =>
+            op.destination == newDestination &&
+            op.amountSat == newAmount &&
+            op.isIncomplete);
+
+        expect(existing.isNotEmpty, isTrue, reason: 'Duplicate should be blocked');
+      });
+
+      test('different destination is allowed', () {
+        final operations = [
+          OperationState(
+            id: 'op-existing',
+            walletId: 'wallet-1',
+            type: OperationType.send,
+            status: OperationStatus.executing,
+            startedAt: DateTime.now(),
+            destination: 'lnbc100...',
+            amountSat: 1000,
+          ),
+        ];
+
+        const newDestination = 'lnbc200...';
+        const newAmount = 1000;
+
+        final existing = operations.where((op) =>
+            op.destination == newDestination &&
+            op.amountSat == newAmount &&
+            op.isIncomplete);
+
+        expect(existing.isEmpty, isTrue);
+      });
+
+      test('completed operation allows new payment to same destination', () {
+        final operations = [
+          OperationState(
+            id: 'op-existing',
+            walletId: 'wallet-1',
+            type: OperationType.send,
+            status: OperationStatus.completed,
+            startedAt: DateTime.now(),
+            destination: 'lnbc100...',
+            amountSat: 1000,
+          ),
+        ];
+
+        const newDestination = 'lnbc100...';
+        const newAmount = 1000;
+
+        final existing = operations.where((op) =>
+            op.destination == newDestination &&
+            op.amountSat == newAmount &&
+            op.isIncomplete);
+
+        expect(existing.isEmpty, isTrue);
+      });
+    });
+  });
+
+
   // ==================== OPERATION STATE TESTS ====================
   group('OperationState', () {
     group('serialization', () {

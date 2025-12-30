@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/secure_storage_service.dart';
 import '../utils/theme.dart';
 import '../utils/secure_clipboard.dart';
+import '../utils/secure_string.dart';
 import 'manage_wallets_screen.dart';
 import 'welcome_screen.dart';
 
@@ -345,7 +346,8 @@ class _BackupSheet extends StatefulWidget {
 }
 
 class _BackupSheetState extends State<_BackupSheet> {
-  String? _mnemonic;
+  // SECURITY: Use SecureString to enable memory wiping on disposal
+  SecureString? _mnemonic;
   String? _walletName;
   bool _isLoading = true;
   bool _showWords = false;
@@ -356,11 +358,20 @@ class _BackupSheetState extends State<_BackupSheet> {
     _loadMnemonic();
   }
 
+  @override
+  void dispose() {
+    // SECURITY: Securely wipe mnemonic from memory (triple-overwrite pattern)
+    _mnemonic?.dispose();
+    _mnemonic = null;
+    super.dispose();
+  }
+
   Future<void> _loadMnemonic() async {
     final wallet = context.read<WalletProvider>();
     final mnemonic = await wallet.getMnemonic();
     setState(() {
-      _mnemonic = mnemonic;
+      // SECURITY: Store mnemonic as SecureString for memory wiping
+      _mnemonic = mnemonic != null ? SecureString.fromString(mnemonic) : null;
       _walletName = wallet.activeWallet?.name;
       _isLoading = false;
     });
@@ -368,7 +379,7 @@ class _BackupSheetState extends State<_BackupSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final words = _mnemonic?.split(' ') ?? [];
+    final words = _mnemonic?.value.split(' ') ?? [];
 
     return DraggableScrollableSheet(
       initialChildSize: 0.7,
@@ -468,7 +479,7 @@ class _BackupSheetState extends State<_BackupSheet> {
                 onPressed: () async {
                   await SecureClipboard.copyWithTimeout(
                     context,
-                    _mnemonic ?? '',
+                    _mnemonic?.value ?? '',
                     timeout: const Duration(seconds: 30),
                   );
                 },

@@ -221,6 +221,24 @@ class LightningService {
     }
   }
 
+  /// Delete a wallet's data directory from disk
+  /// SECURITY: Must be called when deleting a wallet to prevent data remnants
+  Future<void> deleteWalletDirectory(String walletId) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final walletDir = Directory('${directory.path}/wallet_$walletId');
+
+      if (await walletDir.exists()) {
+        await walletDir.delete(recursive: true);
+        SecureLogger.info('Deleted wallet directory for $walletId', tag: 'Breez');
+      }
+    } catch (e, stack) {
+      SecureLogger.error('Failed to delete wallet directory', error: e, stackTrace: stack, tag: 'Breez');
+      // Re-throw to ensure caller knows deletion failed
+      rethrow;
+    }
+  }
+
   void _ensureInitialized() {
     if (!_isInitialized || _sdk == null) {
       throw Exception('Breez SDK not initialized');

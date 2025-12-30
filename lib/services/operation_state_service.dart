@@ -28,6 +28,7 @@ enum OperationStatus {
 /// Represents the state of an in-flight operation
 class OperationState {
   final String id;
+  final String? walletId;  // SECURITY: Wallet isolation for multi-wallet support
   final OperationType type;
   final String? destination;
   final int? amountSat;
@@ -40,6 +41,7 @@ class OperationState {
 
   OperationState({
     required this.id,
+    this.walletId,
     required this.type,
     this.destination,
     this.amountSat,
@@ -60,6 +62,7 @@ class OperationState {
   }) {
     return OperationState(
       id: id,
+      walletId: walletId,
       type: type,
       destination: destination,
       amountSat: amountSat,
@@ -74,6 +77,7 @@ class OperationState {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'walletId': walletId,
     'type': type.name,
     'destination': destination,
     'amountSat': amountSat,
@@ -88,6 +92,7 @@ class OperationState {
   factory OperationState.fromJson(Map<String, dynamic> json) {
     return OperationState(
       id: json['id'] as String,
+      walletId: json['walletId'] as String?,
       type: OperationType.values.firstWhere(
         (e) => e.name == json['type'],
         orElse: () => OperationType.send,
@@ -187,14 +192,17 @@ class OperationStateService {
   }
 
   /// Create a new operation and persist it
+  /// SECURITY: walletId is required for proper wallet isolation
   Future<OperationState> createOperation({
     required OperationType type,
+    required String walletId,
     String? destination,
     int? amountSat,
     Map<String, dynamic>? metadata,
   }) async {
     final operation = OperationState(
       id: generateOperationId(),
+      walletId: walletId,
       type: type,
       destination: destination,
       amountSat: amountSat,
@@ -254,15 +262,27 @@ class OperationStateService {
   }
 
   /// Get all incomplete operations (for resume on app start)
-  List<OperationState> getIncompleteOperations() {
-    return _operations.where((op) => op.isIncomplete).toList();
+  /// SECURITY: Filter by walletId to prevent cross-wallet data leakage
+  List<OperationState> getIncompleteOperations({String? walletId}) {
+    return _operations.where((op) =>
+        op.isIncomplete &&
+        (walletId == null || op.walletId == walletId)
+    ).toList();
   }
 
   /// Get incomplete send operations specifically (highest risk)
-  List<OperationState> getIncompleteSends() {
-    return _operations
-        .where((op) => op.isIncomplete && op.isSend)
-        .toList();
+  /// SECURITY: Filter by walletId to prevent cross-wallet data leakage
+  List<OperationState> getIncompleteSends({String? walletId}) {
+    return _operations.where((op) =>
+        op.isIncomplete &&
+        op.isSend &&
+        (walletId == null || op.walletId == walletId)
+    ).toList();
+  }
+
+  /// Get operations for a specific wallet
+  List<OperationState> getOperationsForWallet(String walletId) {
+    return _operations.where((op) => op.walletId == walletId).toList();
   }
 
   /// Get operation by ID

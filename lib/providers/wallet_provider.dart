@@ -16,6 +16,14 @@ class WalletProvider extends ChangeNotifier {
   // Atomic mutex lock to prevent concurrent payment operations (TOCTOU-safe)
   final Lock _sendLock = Lock();
 
+  // SECURITY: Track if a payment is in progress to prevent wallet switching
+  bool _paymentInProgress = false;
+  bool get paymentInProgress => _paymentInProgress;
+
+  // SECURITY: Rate limiting for payment attempts (prevent DoS and rapid drain attacks)
+  static const int _maxPaymentAttemptsPerMinute = 5;
+  final List<DateTime> _paymentAttempts = [];
+
   // Multi-wallet state
   List<WalletMetadata> _wallets = [];
   WalletMetadata? _activeWallet;
@@ -215,7 +223,13 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Switch to a different wallet
+  /// SECURITY: Blocked during active payments to prevent wrong-wallet sends
   Future<void> switchWallet(String walletId) async {
+    // SECURITY: Prevent wallet switch during active payment
+    if (_paymentInProgress) {
+      throw Exception('Cannot switch wallets while a payment is in progress');
+    }
+
     final wallet = _wallets.firstWhere(
       (w) => w.id == walletId,
       orElse: () => throw Exception('Wallet not found'),
@@ -250,11 +264,21 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Rename a wallet
+  /// SECURITY: Validates input to prevent empty names and excessive length
   Future<void> renameWallet(String walletId, String newName) async {
+    // Input validation
+    final trimmedName = newName.trim();
+    if (trimmedName.isEmpty) {
+      throw Exception('Wallet name cannot be empty');
+    }
+    if (trimmedName.length > 50) {
+      throw Exception('Wallet name cannot exceed 50 characters');
+    }
+
     final index = _wallets.indexWhere((w) => w.id == walletId);
     if (index == -1) throw Exception('Wallet not found');
 
-    _wallets[index] = _wallets[index].copyWith(name: newName);
+    _wallets[index] = _wallets[index].copyWith(name: trimmedName);
     await SecureStorageService.saveWalletList(_wallets);
 
     // Update active wallet reference if needed
@@ -266,6 +290,7 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Delete a wallet (cannot delete last wallet)
+  /// SECURITY: Deletes both secure storage keys AND Breez SDK directory
   Future<void> deleteWallet(String walletId) async {
     if (_wallets.length <= 1) {
       throw Exception('Cannot delete the last wallet');
@@ -289,8 +314,11 @@ class WalletProvider extends ChangeNotifier {
       _wallets = _wallets.where((w) => w.id != walletId).toList();
       await SecureStorageService.saveWalletList(_wallets);
 
-      // Delete wallet data
+      // Delete wallet secure storage data (mnemonic, addresses)
       await SecureStorageService.deleteWalletData(walletId);
+
+      // SECURITY: Delete Breez SDK directory to remove all cached wallet data
+      await _lightningService.deleteWalletDirectory(walletId);
 
       SecureLogger.info('Deleted wallet: ${wallet.name}', tag: 'Wallet');
       notifyListeners();
@@ -323,8 +351,11 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Check for incomplete operations from previous session
+  /// SECURITY: Only loads operations for the active wallet
   Future<void> _checkIncompleteOperations() async {
-    _incompleteOperations = _operationStateService.getIncompleteOperations();
+    _incompleteOperations = _operationStateService.getIncompleteOperations(
+      walletId: _activeWallet?.id,
+    );
 
     if (_incompleteOperations.isNotEmpty) {
       SecureLogger.info('Found ${_incompleteOperations.length} incomplete operations', tag: 'Wallet');
@@ -337,8 +368,10 @@ class WalletProvider extends ChangeNotifier {
         }
       }
 
-      // Refresh the list after updates
-      _incompleteOperations = _operationStateService.getIncompleteOperations();
+      // Refresh the list after updates (filtered to active wallet)
+      _incompleteOperations = _operationStateService.getIncompleteOperations(
+        walletId: _activeWallet?.id,
+      );
       notifyListeners();
     }
   }
@@ -346,7 +379,9 @@ class WalletProvider extends ChangeNotifier {
   /// Acknowledge and dismiss an incomplete operation after user review
   Future<void> acknowledgeIncompleteOperation(String operationId) async {
     await _operationStateService.removeOperation(operationId);
-    _incompleteOperations = _operationStateService.getIncompleteOperations();
+    _incompleteOperations = _operationStateService.getIncompleteOperations(
+      walletId: _activeWallet?.id,
+    );
     notifyListeners();
   }
 
@@ -395,6 +430,7 @@ class WalletProvider extends ChangeNotifier {
 
     final operation = await _operationStateService.createOperation(
       type: OperationType.receiveOnchain,
+      walletId: _activeWallet!.id,
     );
 
     try {
@@ -422,6 +458,7 @@ class WalletProvider extends ChangeNotifier {
 
     final operation = await _operationStateService.createOperation(
       type: OperationType.receiveBolt12,
+      walletId: _activeWallet!.id,
     );
 
     try {
@@ -443,16 +480,45 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
+  /// SECURITY: Check if payment is rate limited
+  /// Returns true if too many attempts in the last minute
+  bool _isRateLimited() {
+    final now = DateTime.now();
+    final oneMinuteAgo = now.subtract(const Duration(minutes: 1));
+
+    // Remove attempts older than 1 minute
+    _paymentAttempts.removeWhere((attempt) => attempt.isBefore(oneMinuteAgo));
+
+    return _paymentAttempts.length >= _maxPaymentAttemptsPerMinute;
+  }
+
+  /// SECURITY: Record a payment attempt for rate limiting
+  void _recordPaymentAttempt() {
+    _paymentAttempts.add(DateTime.now());
+  }
+
   /// Send a payment (BOLT11, BOLT12, Lightning Address, etc.)
   /// Returns operation ID on success for tracking, null on failure
   Future<String?> sendPayment(String destination, {BigInt? amountSat}) async {
-    if (!_isInitialized) return null;
+    if (!_isInitialized || _activeWallet == null) return null;
+
+    // SECURITY: Rate limiting - prevent rapid payment attempts (DoS/drain attacks)
+    if (_isRateLimited()) {
+      _error = 'Too many payment attempts. Please wait a moment before trying again.';
+      SecureLogger.warn('Payment rate limited', tag: 'Payment');
+      notifyListeners();
+      return null;
+    }
+    _recordPaymentAttempt();
 
     // SECURITY: Validate balance before attempting send
+    // Reserve a buffer for fees to avoid failed transactions
+    const int feeBufferSats = 500; // Reserve for on-chain/routing fees
     if (amountSat != null) {
       final balance = totalBalanceSats;
-      if (amountSat.toInt() > balance) {
-        _error = 'Insufficient balance. Available: $balance sats';
+      final available = balance > feeBufferSats ? balance - feeBufferSats : 0;
+      if (amountSat.toInt() > available) {
+        _error = 'Insufficient balance. Available: $available sats (${feeBufferSats} sats reserved for fees)';
         notifyListeners();
         return null;
       }
@@ -463,11 +529,15 @@ class WalletProvider extends ChangeNotifier {
       }
     }
 
+    // SECURITY: Set payment in progress to block wallet switching
+    _paymentInProgress = true;
     _setLoading(true);
 
     // Create operation record BEFORE starting - this is critical for crash recovery
+    // SECURITY: walletId ensures operations are isolated per wallet
     final operation = await _operationStateService.createOperation(
       type: OperationType.send,
+      walletId: _activeWallet!.id,
       destination: destination,
       amountSat: amountSat?.toInt(),
     );
@@ -499,6 +569,8 @@ class WalletProvider extends ChangeNotifier {
       notifyListeners();
       return null;
     } finally {
+      // SECURITY: Clear payment in progress flag
+      _paymentInProgress = false;
       _setLoading(false);
     }
   }

@@ -84,6 +84,7 @@ class TestWalletProvider extends ChangeNotifier implements WalletProvider {
   @override List<WalletMetadata> get wallets => _wallets;
   @override WalletMetadata? get activeWallet => _activeWallet;
   @override bool get hasMultipleWallets => _wallets.length > 1;
+  @override bool get paymentInProgress => false;
 
   @override int get totalBalanceSats => _info?.walletInfo.balanceSat.toInt() ?? 0;
   @override int get pendingReceiveSats => _info?.walletInfo.pendingReceiveSat.toInt() ?? 0;

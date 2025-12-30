@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../utils/secure_logger.dart';
 
 /// Service for biometric authentication
 class AuthService {
@@ -53,7 +54,7 @@ class AuthService {
         biometricOnly: true,
       );
     } on PlatformException catch (e) {
-      print('Auth error: ${e.code} - ${e.message}');
+      SecureLogger.warn('Auth error: ${e.code}', tag: 'Auth');
       return false;
     }
   }

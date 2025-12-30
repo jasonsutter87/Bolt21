@@ -12,6 +12,7 @@ class MockOperationStateService extends Mock implements OperationStateService {}
 class TestDataFactory {
   static OperationState createOperationState({
     String? id,
+    String? walletId,
     OperationType? type,
     String? destination,
     int? amountSat,
@@ -23,6 +24,7 @@ class TestDataFactory {
   }) {
     return OperationState(
       id: id ?? 'op_${DateTime.now().millisecondsSinceEpoch}',
+      walletId: walletId ?? 'test-wallet-id',
       type: type ?? OperationType.send,
       destination: destination,
       amountSat: amountSat,
@@ -35,11 +37,13 @@ class TestDataFactory {
   }
 
   static List<OperationState> createOperationList(int count, {
+    String? walletId,
     OperationType? type,
     OperationStatus? status,
   }) {
     return List.generate(count, (i) => createOperationState(
       id: 'op_$i',
+      walletId: walletId ?? 'test-wallet-id',
       type: type ?? OperationType.send,
       status: status ?? OperationStatus.pending,
       amountSat: 1000 * (i + 1),
@@ -82,22 +86,27 @@ void setUpMockOperationStateService(MockOperationStateService mock, {
   when(() => mock.getAllOperations())
       .thenReturn(operations ?? []);
 
-  when(() => mock.getIncompleteOperations())
+  when(() => mock.getIncompleteOperations(walletId: any(named: 'walletId')))
       .thenReturn(incompleteOperations ?? []);
 
-  when(() => mock.getIncompleteSends())
+  when(() => mock.getIncompleteSends(walletId: any(named: 'walletId')))
       .thenReturn((incompleteOperations ?? [])
           .where((op) => op.isSend && op.isIncomplete)
           .toList());
 
+  when(() => mock.getOperationsForWallet(any()))
+      .thenReturn(operations ?? []);
+
   when(() => mock.createOperation(
     type: any(named: 'type'),
+    walletId: any(named: 'walletId'),
     destination: any(named: 'destination'),
     amountSat: any(named: 'amountSat'),
     metadata: any(named: 'metadata'),
   )).thenAnswer((invocation) async {
     return TestDataFactory.createOperationState(
       type: invocation.namedArguments[#type] as OperationType?,
+      walletId: invocation.namedArguments[#walletId] as String?,
       destination: invocation.namedArguments[#destination] as String?,
       amountSat: invocation.namedArguments[#amountSat] as int?,
     );
